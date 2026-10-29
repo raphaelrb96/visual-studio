@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { StylePreset } from '@/types/studio';
+import { hyperEaseOutExpo } from '@/lib/hyperframe';
 
 interface BarItem {
   label: string;
@@ -19,9 +20,8 @@ interface GraficoBarrasProps {
 export const GraficoBarras: React.FC<GraficoBarrasProps> = ({
   title = 'Comparativo de Crescimento',
   bars = [
-    { label: 'Vídeo Tradicional', value: 35, formatted: '35%' },
-    { label: 'Motion Programático', value: 92, formatted: '92%' },
-    { label: 'VSL Simples', value: 48, formatted: '48%' },
+    { label: 'Método Manual', value: 25, formatted: '25%' },
+    { label: 'Vídeo Automático IA', value: 94, formatted: '94%' },
   ],
   preset,
   progress = 1,
@@ -29,47 +29,56 @@ export const GraficoBarras: React.FC<GraficoBarrasProps> = ({
   const { theme } = preset;
   const maxValue = Math.max(...bars.map((b) => b.value), 100);
 
+  // Animação de subida HyperFrame nas barras
+  const entryProgress = hyperEaseOutExpo(Math.min(1, (progress || 0) * 1.6));
+
   return (
-    <div className="w-full flex flex-col items-center justify-center p-6 text-center select-none animate-scale-in">
-      <div className="w-full max-w-sm rounded-2xl p-6 bg-white/[0.05] backdrop-blur-xl border border-white/10 shadow-2xl">
-        <h3
-          className="text-lg md:text-xl font-bold tracking-tight mb-6"
+    <div className="w-full flex flex-col items-center justify-center p-4 text-center select-none animate-scale-in">
+      <div
+        className="w-full max-w-sm rounded-3xl p-6 bg-slate-900/90 backdrop-blur-2xl border-2 shadow-2xl relative overflow-hidden"
+        style={{ borderColor: `${theme.highlightTextColor}60` }}
+      >
+        <span
+          className="text-[10px] font-mono uppercase tracking-widest font-extrabold px-3 py-1 rounded-full mb-3 inline-block"
           style={{
-            color: theme.primaryTextColor,
-            fontFamily: theme.fontFamily,
+            backgroundColor: `${theme.highlightTextColor}20`,
+            color: theme.highlightTextColor,
+            border: `1px solid ${theme.highlightTextColor}40`,
           }}
         >
+          Análise Comparativa
+        </span>
+
+        <h3 className="text-base sm:text-lg font-black text-white tracking-tight mb-5">
           {title}
         </h3>
 
-        <div className="space-y-4">
+        <div className="space-y-4 text-left">
           {bars.map((bar, idx) => {
-            const barProgress = Math.min(1, Math.max(0, progress * 1.4));
-            const widthPercent = (bar.value / maxValue) * 100 * barProgress;
-            const isHighlight = idx === 1;
+            const widthPercent = (bar.value / maxValue) * 100 * entryProgress;
+            const isHighlight = idx === 1 || bar.value === maxValue;
 
             return (
-              <div key={idx} className="space-y-1.5 text-left">
-                <div className="flex justify-between text-xs font-semibold">
-                  <span style={{ color: theme.primaryTextColor }}>{bar.label}</span>
+              <div key={idx} className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs font-bold">
+                  <span className={isHighlight ? 'text-white' : 'text-slate-400'}>
+                    {bar.label}
+                  </span>
                   <span
-                    className="font-mono font-bold"
-                    style={{
-                      color: isHighlight ? theme.highlightTextColor : '#94a3b8',
-                    }}
+                    className="font-mono text-sm font-black"
+                    style={{ color: isHighlight ? theme.highlightTextColor : '#94a3b8' }}
                   >
-                    {bar.formatted || `${bar.value}`}
+                    {bar.formatted || `${bar.value}%`}
                   </span>
                 </div>
-                <div className="h-3 w-full bg-white/10 rounded-full overflow-hidden p-[2px]">
+
+                <div className="w-full bg-slate-950 h-3.5 rounded-full overflow-hidden p-0.5 border border-slate-800">
                   <div
-                    className="h-full rounded-full transition-all duration-700 ease-out"
+                    className="h-full rounded-full transition-all duration-150 relative"
                     style={{
-                      width: `${Math.max(4, widthPercent)}%`,
-                      backgroundColor: isHighlight ? theme.highlightTextColor : '#06b6d4',
-                      boxShadow: isHighlight
-                        ? `0 0 12px ${theme.highlightTextColor}`
-                        : undefined,
+                      width: `${Math.max(6, widthPercent)}%`,
+                      backgroundColor: isHighlight ? theme.highlightTextColor : '#475569',
+                      boxShadow: isHighlight ? `0 0 15px ${theme.highlightTextColor}88` : undefined,
                     }}
                   />
                 </div>

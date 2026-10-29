@@ -1,258 +1,247 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   Film,
   Clock,
-  HardDrive,
   Sparkles,
   ArrowRight,
   Play,
   Download,
   Trash2,
   ExternalLink,
-  Layers,
+  PlusCircle,
+  Video,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
 } from 'lucide-react';
-
-interface MockVideo {
-  id: string;
-  title: string;
-  preset: string;
-  format: '9:16' | '16:9';
-  duration: string;
-  status: 'ready' | 'processing' | 'draft';
-  createdAt: string;
-  thumbnail: string;
-}
-
-const MOCK_VIDEOS: MockVideo[] = [
-  {
-    id: 'vid-1',
-    title: 'A Maior Revolução de IA nos Negócios',
-    preset: 'Dark Vox',
-    format: '9:16',
-    duration: '00:17.5',
-    status: 'ready',
-    createdAt: 'Hoje, 14:32',
-    thumbnail: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80',
-  },
-  {
-    id: 'vid-2',
-    title: 'Top 5 Estratégias de Vídeo Vertical',
-    preset: 'Kinetic Yellow',
-    format: '9:16',
-    duration: '00:32.0',
-    status: 'ready',
-    createdAt: 'Ontem, 19:15',
-    thumbnail: 'https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?auto=format&fit=crop&w=600&q=80',
-  },
-  {
-    id: 'vid-3',
-    title: 'Distribuição e Audiência em 2026',
-    preset: 'Cyber News',
-    format: '16:9',
-    duration: '00:45.0',
-    status: 'processing',
-    createdAt: 'Ontem, 11:20',
-    thumbnail: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&w=600&q=80',
-  },
-  {
-    id: 'vid-4',
-    title: 'Roteiro de VSL Programático',
-    preset: 'Minimalist Clean',
-    format: '9:16',
-    duration: '00:15.0',
-    status: 'draft',
-    createdAt: '24 de Out, 18:04',
-    thumbnail: 'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=600&q=80',
-  },
-];
+import { useAuth } from '@/app/lib/AuthContext';
+import { getUserVideos, getUserCredits, deleteDocument, VideoRecord, UserCredits } from '@/app/lib/firestore';
 
 export default function DashboardPage() {
+  const { user } = useAuth();
+  const [videos, setVideos] = useState<VideoRecord[]>([]);
+  const [credits, setCredits] = useState<UserCredits | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const loadData = async () => {
+    if (!user) return;
+    try {
+      setLoading(true);
+      const [userVids, userCreds] = await Promise.all([
+        getUserVideos(user.uid),
+        getUserCredits(user.uid),
+      ]);
+      setVideos(userVids);
+      setCredits(userCreds);
+    } catch (err) {
+      console.error('Erro ao carregar dashboard:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, [user]);
+
+  const handleDeleteVideo = async (id: string) => {
+    if (!confirm('Deseja realmente excluir este vídeo?')) return;
+    try {
+      await deleteDocument('videos', id);
+      setVideos((prev) => prev.filter((v) => v.id !== id));
+    } catch (err) {
+      alert('Erro ao excluir vídeo');
+    }
+  };
+
+  const readyCount = videos.filter((v) => v.status === 'ready').length;
+  const processingCount = videos.filter((v) => v.status === 'processing').length;
+
   return (
     <div className="space-y-8">
-      {/* Quick Action Hero Banner */}
+      {/* Banner de Boas-Vindas */}
       <div className="relative overflow-hidden rounded-3xl p-8 md:p-10 bg-gradient-to-r from-indigo-950 via-slate-900 to-[#0e1628] border border-indigo-500/20 shadow-2xl">
         <div className="absolute -right-10 -bottom-10 w-72 h-72 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10 max-w-2xl space-y-4">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-bold tracking-wide">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>Scale to Zero • Custo Próximo de Zero</span>
+            <span>Painel de Produção em Tempo Real</span>
           </div>
-          <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight leading-tight">
-            Crie vídeos com código e renderização determinística a 60 FPS
+          <h1 className="text-2xl md:text-4xl font-black text-white tracking-tight leading-tight">
+            Olá, {user?.displayName || 'Criador'}! Vamos gerar novos vídeos hoje?
           </h1>
-          <p className="text-slate-300 text-sm md:text-base leading-relaxed">
-            Gere roteiros estruturados via Gemini, visualize no Canvas e exporte em MP4 de alta resolução com Cloud Run e FFmpeg nativo.
+          <p className="text-sm md:text-base text-slate-300 leading-relaxed">
+            Seu saldo atual:{' '}
+            <strong className="text-white">
+              {credits ? `${credits.availableCredits} de ${credits.totalCredits} vídeos restantes` : 'Carregando...'}
+            </strong>{' '}
+            neste mês.
           </p>
-          <div className="pt-2 flex flex-wrap gap-3">
+          <div className="pt-2 flex flex-wrap items-center gap-3">
             <Link
               href="/create"
-              className="inline-flex items-center gap-2.5 px-6 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm shadow-xl shadow-indigo-600/30 transition-all hover:scale-105"
+              className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-indigo-600 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 text-white font-bold text-sm shadow-xl shadow-indigo-600/30 transition-all hover:scale-105 active:scale-95"
             >
-              <Sparkles className="w-4 h-4" />
-              <span>Criar Novo Vídeo</span>
-              <ArrowRight className="w-4 h-4" />
+              <PlusCircle className="w-4 h-4" />
+              <span>Gerar Novo Vídeo</span>
             </Link>
             <Link
-              href="/presets"
-              className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-slate-800/80 hover:bg-slate-700 border border-slate-700/80 text-white font-semibold text-sm transition-all"
+              href="/videos"
+              className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-slate-200 font-semibold text-sm transition-all"
             >
-              <Layers className="w-4 h-4" />
-              <span>Explorar Presets</span>
+              <span>Ver Meus Vídeos</span>
+              <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
         </div>
       </div>
 
-      {/* Metrics Row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <div className="glass-panel rounded-2xl p-6 border border-white/10 shadow-lg">
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              Vídeos Gerados (Mês)
-            </span>
-            <div className="p-2.5 rounded-xl bg-indigo-500/20 text-indigo-400">
-              <Film className="w-5 h-5" />
-            </div>
+      {/* Cards de Métricas Reais */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+        <div className="glass-panel rounded-2xl p-5 border border-white/10">
+          <div className="flex items-center justify-between text-slate-400 mb-2">
+            <span className="text-xs font-semibold uppercase tracking-wider">Total Produzido</span>
+            <Film className="w-4 h-4 text-indigo-400" />
           </div>
-          <div className="text-3xl font-black text-white tracking-tight font-mono">24</div>
-          <span className="text-xs text-emerald-400 font-semibold mt-2 inline-block">
-            +38% em relação ao mês anterior
-          </span>
+          <p className="text-2xl font-black text-white">{videos.length}</p>
+          <span className="text-[11px] text-slate-500 mt-1 block">Vídeos gerados na conta</span>
         </div>
 
-        <div className="glass-panel rounded-2xl p-6 border border-white/10 shadow-lg">
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              Minutos Renderizados
-            </span>
-            <div className="p-2.5 rounded-xl bg-cyan-500/20 text-cyan-400">
-              <Clock className="w-5 h-5" />
-            </div>
+        <div className="glass-panel rounded-2xl p-5 border border-white/10">
+          <div className="flex items-center justify-between text-slate-400 mb-2">
+            <span className="text-xs font-semibold uppercase tracking-wider">Prontos para Download</span>
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
           </div>
-          <div className="text-3xl font-black text-white tracking-tight font-mono">14.8 min</div>
-          <span className="text-xs text-slate-400 font-medium mt-2 inline-block">
-            Tempo médio de render: 4.2s por cena
-          </span>
+          <p className="text-2xl font-black text-white">{readyCount}</p>
+          <span className="text-[11px] text-emerald-400 mt-1 block">Disponíveis em 1080p Full HD</span>
         </div>
 
-        <div className="glass-panel rounded-2xl p-6 border border-white/10 shadow-lg">
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              Armazenamento GCS
-            </span>
-            <div className="p-2.5 rounded-xl bg-yellow-500/20 text-yellow-400">
-              <HardDrive className="w-5 h-5" />
-            </div>
+        <div className="glass-panel rounded-2xl p-5 border border-white/10">
+          <div className="flex items-center justify-between text-slate-400 mb-2">
+            <span className="text-xs font-semibold uppercase tracking-wider">Na Fila de Render</span>
+            <Clock className="w-4 h-4 text-cyan-400" />
           </div>
-          <div className="text-3xl font-black text-white tracking-tight font-mono">428 MB</div>
-          <span className="text-xs text-slate-400 font-medium mt-2 inline-block">
-            Bucket /renders & /raw_assets
+          <p className="text-2xl font-black text-white">{processingCount}</p>
+          <span className="text-[11px] text-slate-500 mt-1 block">Processando na nuvem</span>
+        </div>
+
+        <div className="glass-panel rounded-2xl p-5 border border-white/10">
+          <div className="flex items-center justify-between text-slate-400 mb-2">
+            <span className="text-xs font-semibold uppercase tracking-wider">Créditos Restantes</span>
+            <Sparkles className="w-4 h-4 text-amber-400" />
+          </div>
+          <p className="text-2xl font-black text-white">
+            {credits ? credits.availableCredits : '...'}
+          </p>
+          <span className="text-[11px] text-amber-400/90 mt-1 block">
+            Plano: {credits?.plan === 'free' ? 'Gratuito (Teste)' : credits?.plan || 'Ativo'}
           </span>
         </div>
       </div>
 
-      {/* Recent Videos Section */}
+      {/* Lista de Vídeos Recentes (Dados Reais do Firestore) */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-bold text-white tracking-tight">Vídeos Recentes</h2>
-            <p className="text-xs text-slate-400">Projetos criados recentemente e status de exportação</p>
+            <h2 className="text-lg md:text-xl font-black text-white tracking-tight flex items-center gap-2">
+              <Video className="w-5 h-5 text-indigo-400" />
+              <span>Vídeos Recentes</span>
+            </h2>
+            <p className="text-xs text-slate-400">Vídeos gerados e salvos no seu perfil</p>
           </div>
           <Link
             href="/videos"
-            className="text-xs font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+            className="text-xs font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors"
           >
-            Ver todos
+            <span>Ver todos</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          {MOCK_VIDEOS.map((video) => (
-            <div
-              key={video.id}
-              className="glass-panel glass-panel-hover rounded-2xl overflow-hidden border border-white/10 flex flex-col justify-between group"
+        {loading ? (
+          <div className="glass-panel rounded-3xl p-12 text-center flex flex-col items-center justify-center">
+            <Loader2 className="w-8 h-8 text-indigo-500 animate-spin mb-3" />
+            <p className="text-sm text-slate-400 font-medium">Carregando seus vídeos...</p>
+          </div>
+        ) : videos.length === 0 ? (
+          <div className="glass-panel rounded-3xl p-12 text-center border border-dashed border-slate-700/80">
+            <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 mx-auto flex items-center justify-center mb-4">
+              <Film className="w-8 h-8" />
+            </div>
+            <h3 className="text-lg font-bold text-white mb-1">Nenhum vídeo gerado ainda</h3>
+            <p className="text-xs sm:text-sm text-slate-400 max-w-md mx-auto mb-6">
+              Você ainda não gerou vídeos na sua conta. Escolha um modelo e gere seu primeiro vídeo em segundos!
+            </p>
+            <Link
+              href="/create"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg shadow-indigo-600/30 transition-all hover:scale-105"
             >
-              {/* Thumbnail Container */}
-              <div className="relative aspect-video w-full bg-slate-900 overflow-hidden">
-                <img
-                  src={video.thumbnail}
-                  alt={video.title}
-                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 opacity-80 group-hover:opacity-100"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
-
-                {/* Status Badge */}
-                <div className="absolute top-2.5 left-2.5">
-                  {video.status === 'ready' && (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                      Pronto (MP4)
+              <PlusCircle className="w-4 h-4" />
+              <span>Criar Meu Primeiro Vídeo</span>
+            </Link>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {videos.slice(0, 6).map((video) => (
+              <div
+                key={video.id}
+                className="glass-panel rounded-2xl overflow-hidden border border-white/10 hover:border-indigo-500/40 transition-all group flex flex-col justify-between"
+              >
+                <div className="p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                      {video.format || '9:16'}
                     </span>
-                  )}
-                  {video.status === 'processing' && (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-yellow-500/20 text-yellow-300 border border-yellow-500/40 flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-ping" />
-                      Renderizando
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                        video.status === 'ready'
+                          ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                          : video.status === 'processing'
+                          ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30 animate-pulse'
+                          : 'bg-slate-700 text-slate-300'
+                      }`}
+                    >
+                      {video.status === 'ready' ? 'Pronto' : video.status === 'processing' ? 'Processando' : 'Rascunho'}
                     </span>
-                  )}
-                  {video.status === 'draft' && (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-slate-500/20 text-slate-300 border border-slate-500/40">
-                      Rascunho
-                    </span>
-                  )}
-                </div>
+                  </div>
 
-                {/* Format & Duration */}
-                <div className="absolute bottom-2.5 right-2.5 px-1.5 py-0.5 rounded bg-black/80 text-[10px] font-mono text-white/90">
-                  {video.format} • {video.duration}
-                </div>
-              </div>
-
-              {/* Card Meta & Actions */}
-              <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400">
-                    Preset: {video.preset}
-                  </span>
-                  <h3 className="text-sm font-bold text-white mt-1 line-clamp-1 leading-snug">
-                    {video.title}
+                  <h3 className="text-sm font-bold text-white line-clamp-2 mb-1 group-hover:text-indigo-300 transition-colors">
+                    {video.title || 'Vídeo sem título'}
                   </h3>
-                  <span className="text-[11px] text-slate-500 mt-1 block">{video.createdAt}</span>
+                  <p className="text-xs text-slate-400">{video.preset || 'Estilo Dinâmico'}</p>
                 </div>
 
-                <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
-                  <Link
-                    href="/create/motion-narrated/step-3-editor"
-                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-300 hover:text-white"
-                  >
-                    <Play className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>Abrir Editor</span>
-                  </Link>
-
-                  <div className="flex items-center gap-1">
-                    {video.status === 'ready' && (
-                      <button
-                        title="Download MP4"
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                <div className="p-4 bg-slate-900/60 border-t border-slate-800 flex items-center justify-between text-xs">
+                  <span className="text-[11px] text-slate-500">
+                    {video.createdAt ? new Date(video.createdAt).toLocaleDateString('pt-BR') : 'Hoje'}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {video.videoUrl && (
+                      <a
+                        href={video.videoUrl}
+                        download
+                        className="p-1.5 rounded-lg bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600 hover:text-white transition-colors"
+                        title="Baixar MP4"
                       >
                         <Download className="w-3.5 h-3.5" />
-                      </button>
+                      </a>
                     )}
                     <button
+                      onClick={() => handleDeleteVideo(video.id)}
+                      className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:bg-rose-500/20 hover:text-rose-400 transition-colors"
                       title="Excluir"
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition-colors"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

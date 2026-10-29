@@ -1,6 +1,11 @@
 'use client';
 
-export default function ErrorPage({ error, reset }) {
+interface ErrorProps {
+  error: Error & { digest?: string };
+  reset: () => void;
+}
+
+export default function ErrorPage({ error, reset }: ErrorProps) {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-red-50 p-8">
       <h1 className="text-4xl font-bold text-red-800 mb-4">Erro inesperado</h1>

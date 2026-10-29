@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { StylePreset } from '@/types/studio';
+import { hyperEaseOutBack } from '@/lib/hyperframe';
 
 interface StatCounterProps {
   number?: number | string;
@@ -24,61 +25,59 @@ export const StatCounter: React.FC<StatCounterProps> = ({
 }) => {
   const { theme } = preset;
 
-  // Compute interpolated value if numeric
-  const numericVal = typeof number === 'number' ? number : parseFloat(String(number).replace(/[^0-9.-]+/g, '')) || 0;
-  const currentCount = Math.round(numericVal * Math.min(1, Math.max(0, progress * 1.5)));
+  const numericVal =
+    typeof number === 'number'
+      ? number
+      : parseFloat(String(number).replace(/[^0-9.-]+/g, '')) || 0;
+
+  // Interpolação cinética elástica do contador
+  const entryPhase = Math.min(1, (progress || 0) * 1.5);
+  const currentCount = Math.round(numericVal * entryPhase);
+  const scale = hyperEaseOutBack(Math.min(1, (progress || 0) / 0.35));
 
   return (
-    <div className="w-full flex flex-col items-center justify-center p-6 text-center select-none animate-scale-in">
-      <div className="w-full max-w-sm rounded-2xl p-8 bg-white/[0.06] backdrop-blur-2xl border border-white/10 shadow-[0_10px_40px_rgba(0,0,0,0.5)]">
+    <div
+      className="w-full flex flex-col items-center justify-center p-4 text-center select-none"
+      style={{ transform: `scale(${scale})` }}
+    >
+      <div
+        className="w-full max-w-sm rounded-3xl p-7 bg-slate-900/90 backdrop-blur-2xl border-2 shadow-[0_20px_60px_rgba(0,0,0,0.85)] relative overflow-hidden"
+        style={{
+          borderColor: theme.highlightTextColor,
+          boxShadow: `0 0 35px ${theme.highlightTextColor}30`,
+        }}
+      >
         <span
-          className="text-xs uppercase font-extrabold tracking-widest px-3 py-1 rounded-full mb-3 inline-block"
+          className="text-xs uppercase font-black tracking-widest px-3.5 py-1 rounded-full mb-3 inline-block"
           style={{
             backgroundColor: `${theme.highlightTextColor}20`,
             color: theme.highlightTextColor,
-            border: `1px solid ${theme.highlightTextColor}40`,
+            border: `1.5px solid ${theme.highlightTextColor}40`,
           }}
         >
           Métrica Chave
         </span>
 
-        {/* Big Number */}
+        {/* Número Gigante com Brilho Neon */}
         <div
-          className="my-3 text-5xl md:text-6xl font-black tracking-tighter flex items-center justify-center gap-1"
+          className="my-2 text-6xl sm:text-7xl font-black tracking-tighter flex items-center justify-center gap-1 font-mono"
           style={{
             color: theme.highlightTextColor,
-            textShadow: `0 0 35px ${theme.highlightTextColor}66`,
-            fontFamily: theme.fontFamily,
+            textShadow: `0 0 35px ${theme.highlightTextColor}99`,
           }}
         >
-          {prefix && <span className="text-3xl md:text-4xl">{prefix}</span>}
+          {prefix && <span className="text-4xl opacity-80">{prefix}</span>}
           <span>{currentCount}</span>
-          {suffix && <span className="text-3xl md:text-4xl">{suffix}</span>}
+          {suffix && <span className="text-4xl opacity-90">{suffix}</span>}
         </div>
 
-        {/* Metric Label */}
-        <h4
-          className="text-base md:text-lg font-bold leading-tight"
-          style={{ color: theme.primaryTextColor }}
-        >
+        {/* Rótulo */}
+        <h4 className="text-sm md:text-base font-extrabold text-white tracking-tight mt-1">
           {label}
         </h4>
 
-        {/* Progress bar animation */}
-        <div className="w-full bg-white/10 h-2 rounded-full my-4 overflow-hidden">
-          <div
-            className="h-full rounded-full transition-all duration-300"
-            style={{
-              width: `${Math.min(100, Math.max(5, (currentCount / (numericVal || 100)) * 100))}%`,
-              backgroundColor: theme.highlightTextColor,
-              boxShadow: `0 0 12px ${theme.highlightTextColor}`,
-            }}
-          />
-        </div>
-
-        {/* Context description */}
         {description && (
-          <p className="text-xs md:text-sm font-medium opacity-70 leading-relaxed text-slate-300">
+          <p className="mt-2 text-xs text-slate-300 font-medium leading-relaxed">
             {description}
           </p>
         )}

@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { StylePreset } from '@/types/studio';
+import { hyperEaseOutBack, hyperInterpolate } from '@/lib/hyperframe';
 
 interface CardFraseProps {
   headline?: string;
@@ -10,7 +11,7 @@ interface CardFraseProps {
   highlightWords?: string[];
   badge?: string;
   preset: StylePreset;
-  progress?: number; // 0 to 1 representing scene progress
+  progress?: number;
 }
 
 export const CardFrase: React.FC<CardFraseProps> = ({
@@ -24,31 +25,37 @@ export const CardFrase: React.FC<CardFraseProps> = ({
 }) => {
   const { theme } = preset;
 
-  // Format highlighted text
+  // Física HyperFrame: escala elástica pop-in e rotação sutil nos primeiros 30% da cena
+  const entryPhase = Math.min(1, (progress || 0) / 0.32);
+  const scale = hyperEaseOutBack(entryPhase);
+  const opacity = Math.min(1, entryPhase * 1.5);
+  const subtleRotation = hyperInterpolate(entryPhase, [0, 1], [-2.5, 0]);
+
+  // Texto formatado com palavras em destaque
   const displayText = text || headline;
   const renderHighlightedText = () => {
     if (!highlightWords || highlightWords.length === 0) {
       return <span>{displayText}</span>;
     }
 
-    const words = displayText.split(' ');
+    const words = displayText.split(/\s+/);
     return words.map((word, idx) => {
       const cleanWord = word.replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, '').toLowerCase();
-      const isHighlighted = highlightWords.some(
-        (hw) => hw.toLowerCase() === cleanWord
-      );
+      const isHighlighted = highlightWords.some((hw) => hw.toLowerCase() === cleanWord);
 
       if (isHighlighted) {
         return (
           <span
             key={idx}
-            className="inline-block transition-transform duration-300 transform scale-105 font-black px-1.5 py-0.5 rounded-lg"
+            className="inline-block font-black px-2 py-0.5 rounded-xl mx-1 shadow-lg transform scale-105"
             style={{
+              backgroundColor: `${theme.highlightTextColor}30`,
               color: theme.highlightTextColor,
-              textShadow: `0 0 25px ${theme.highlightTextColor}88`,
+              border: `1.5px solid ${theme.highlightTextColor}70`,
+              textShadow: `0 0 25px ${theme.highlightTextColor}`,
             }}
           >
-            {word}{' '}
+            {word}
           </span>
         );
       }
@@ -56,45 +63,45 @@ export const CardFrase: React.FC<CardFraseProps> = ({
     });
   };
 
-  const getCardStyleClass = () => {
-    switch (theme.cardStyle) {
-      case 'glassmorphism':
-        return 'bg-white/[0.08] backdrop-blur-2xl border border-white/20 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)]';
-      case 'neon_border':
-        return `bg-black/90 border-2 shadow-[0_0_30px_rgba(6,182,212,0.35)]`;
-      case 'minimal_light':
-        return 'bg-slate-900/90 border border-slate-700/80 shadow-2xl';
-      case 'flat_dark':
-      default:
-        return 'bg-slate-900/95 border border-slate-800 shadow-xl';
-    }
-  };
-
   return (
-    <div className="w-full flex flex-col items-center justify-center p-6 text-center select-none animate-scale-in">
+    <div
+      className="w-full flex flex-col items-center justify-center p-4 text-center select-none"
+      style={{
+        transform: `scale(${scale}) rotate(${subtleRotation}deg)`,
+        opacity,
+      }}
+    >
       {badge && (
         <div
-          className="mb-4 inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-xs font-bold tracking-widest uppercase transition-all"
+          className="mb-4 inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-black tracking-widest uppercase transition-all shadow-xl"
           style={{
-            backgroundColor: `${theme.highlightTextColor}22`,
+            backgroundColor: `${theme.highlightTextColor}25`,
             color: theme.highlightTextColor,
-            border: `1px solid ${theme.highlightTextColor}55`,
-            boxShadow: `0 0 15px ${theme.highlightTextColor}33`,
+            border: `1.5px solid ${theme.highlightTextColor}60`,
+            boxShadow: `0 0 25px ${theme.highlightTextColor}40`,
           }}
         >
-          <span className="w-1.5 h-1.5 rounded-full animate-ping" style={{ backgroundColor: theme.highlightTextColor }} />
-          {badge}
+          <span className="w-2 h-2 rounded-full animate-ping" style={{ backgroundColor: theme.highlightTextColor }} />
+          <span>{badge}</span>
         </div>
       )}
 
+      {/* Card Cinético com Vidro Fosco e Borda de Destaque */}
       <div
-        className={`w-full max-w-sm rounded-2xl p-6 transition-all duration-500 ${getCardStyleClass()}`}
+        className="w-full max-w-sm rounded-3xl p-7 transition-all duration-300 relative overflow-hidden bg-slate-900/90 backdrop-blur-2xl border-2 shadow-[0_20px_60px_rgba(0,0,0,0.85)]"
         style={{
-          borderColor: theme.cardStyle === 'neon_border' ? theme.highlightTextColor : undefined,
+          borderColor: theme.highlightTextColor,
+          boxShadow: `0 0 40px ${theme.highlightTextColor}30, 0 20px 60px rgba(0,0,0,0.85)`,
         }}
       >
+        {/* Luz de topo interna */}
+        <div
+          className="absolute top-0 inset-x-0 h-1"
+          style={{ backgroundColor: theme.highlightTextColor }}
+        />
+
         <h2
-          className="text-2xl md:text-3xl font-extrabold tracking-tight leading-snug break-words"
+          className="text-2xl md:text-3xl font-black tracking-tight leading-tight uppercase drop-shadow-md"
           style={{
             color: theme.primaryTextColor,
             fontFamily: theme.fontFamily,
@@ -104,10 +111,7 @@ export const CardFrase: React.FC<CardFraseProps> = ({
         </h2>
 
         {subtext && (
-          <p
-            className="mt-4 text-sm md:text-base font-medium opacity-80 leading-relaxed"
-            style={{ color: theme.primaryTextColor }}
-          >
+          <p className="mt-3 text-xs md:text-sm text-slate-300 font-medium leading-relaxed">
             {subtext}
           </p>
         )}

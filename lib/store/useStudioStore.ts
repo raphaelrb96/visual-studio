@@ -3,27 +3,20 @@ import {
   VideoManifest, 
   ScriptScene, 
   AspectRatio, 
-  ComponentType, 
   RenderJob,
   JobStatus 
 } from '@/types/studio';
 import { DEFAULT_STYLE_PRESETS } from '@/lib/presets';
 
 interface StudioState {
-  // Video Manifest Core
   manifest: VideoManifest;
-  
-  // Player & Editor State
   isPlaying: boolean;
   currentTime: number;
   currentSceneIndex: number;
   selectedSceneId: string | null;
   playbackSpeed: number;
-  
-  // Render Job State
   currentJob: RenderJob | null;
 
-  // Actions
   setPreset: (presetId: string) => void;
   setAspectRatio: (ratio: AspectRatio) => void;
   setScenes: (scenes: ScriptScene[]) => void;
@@ -46,71 +39,83 @@ const DEFAULT_SCENES: ScriptScene[] = [
   {
     id: 'sc-1',
     sceneIndex: 0,
-    text: 'A maior revolução na criação de vídeos com código acaba de chegar.',
+    text: 'Quase ninguém te conta isso, mas 90 por cento dos negócios perdem vendas todos os dias por não postarem vídeos.',
     durationSec: 4.5,
     componentType: 'CardFrase',
+    audioUrl: '/api/tts?text=Quase%20ningu%C3%A9m%20te%20conta%20isso%2C%20mas%2090%20por%20cento%20dos%20neg%C3%B3cios%20perdem%20vendas%20todos%20os%20dias%20por%20n%C3%A3o%20postarem%20v%C3%ADdeos.&lang=pt-BR',
+    brollImageUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1080&q=85',
+    sfxType: 'impact',
     componentProps: {
-      headline: 'A MAIOR REVOLUÇÃO',
-      subtext: 'Renderização programática de alto nível',
-      highlightWords: ['revolução', 'código'],
-      badge: 'NOVA ERA',
+      headline: '90% PERDEM VENDAS DIARIAMENTE',
+      subtext: 'O poder da retenção automática nas redes sociais',
+      highlightWords: ['90%', 'vendas', 'vídeos'],
+      badge: 'SEGREDO DO MERCADO',
     },
   },
   {
     id: 'sc-2',
     sceneIndex: 1,
-    text: 'Mais de 84% do tráfego digital atual é dominado pelo consumo de vídeos curtos.',
-    durationSec: 4.0,
+    text: 'Mais de 84 por cento do tráfego digital atual é dominado pelo consumo de vídeos curtos verticais.',
+    durationSec: 4.2,
     componentType: 'StatCounter',
+    audioUrl: '/api/tts?text=Mais%20de%2084%20por%20cento%20do%20tr%C3%A1fego%20digital%20atual%20%C3%A9%20dominado%20pelo%20consumo%20de%20v%C3%ADdeos%20curtos%20verticais.&lang=pt-BR',
+    brollImageUrl: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1080&q=85',
+    sfxType: 'whoosh',
     componentProps: {
       number: 84,
       suffix: '%',
-      prefix: '',
-      label: 'Consumo Global de Conteúdo',
-      description: 'Formatos verticais 9:16 geram 3.5x mais retenção',
+      prefix: '+',
+      label: 'Atenção no Formato Vertical',
+      description: 'Reels, Shorts e TikTok geram 3.5x mais conversão',
     },
   },
   {
     id: 'sc-3',
     sceneIndex: 2,
-    text: 'Compare a distribuição de formatos: o vídeo vertical superou todos os canais tradicionais.',
-    durationSec: 5.0,
-    componentType: 'GraficoPizza',
+    text: 'Com o nosso gerador automático, você transforma uma simples frase em um vídeo profissional em segundos.',
+    durationSec: 4.4,
+    componentType: 'MediaBroll',
+    audioUrl: '/api/tts?text=Com%20o%20nosso%20gerador%20autom%C3%A1tico%2C%20voc%C3%AA%20transforma%20uma%20simples%20frase%20em%20um%20v%C3%ADdeo%20profissional%20em%20segundos.&lang=pt-BR',
+    brollImageUrl: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1080&q=85',
+    sfxType: 'pop',
     componentProps: {
-      title: 'Distribuição de Formatos 2026',
-      slices: [
-        { label: 'Reels / Shorts', value: 58, color: '#6366f1' },
-        { label: 'TikTok Native', value: 27, color: '#06b6d4' },
-        { label: 'Outros Canais', value: 15, color: '#facc15' },
-      ],
+      overlayText: 'PRONTO EM MENOS DE 60 SEGUNDOS',
+      caption: 'Voz neural + Legendas dinâmicas + B-Roll HD',
+      imageUrl: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1080&q=85',
     },
   },
   {
     id: 'sc-4',
     sceneIndex: 3,
-    text: 'Produza vídeos em escala com custo próximo a zero e automação total.',
+    text: 'Digite o seu tema ao lado, clique em gerar vídeo e baixe seu arquivo pronto para postar.',
     durationSec: 4.0,
     componentType: 'CTAButton',
+    audioUrl: '/api/tts?text=Digite%20o%20seu%20tema%20ao%20lado%2C%20clique%20em%20gerar%20v%C3%ADdeo%20e%20baixe%20seu%20arquivo%20pronto%20para%20postar.&lang=pt-BR',
+    brollImageUrl: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1080&q=85',
+    sfxType: 'rise',
     componentProps: {
-      buttonText: 'Começar Agora Gratuitamente',
-      subcaption: 'Sem necessidade de editar na mão',
-      accentColor: '#6366f1',
+      buttonText: 'Gerar Meu Vídeo Agora',
+      subcaption: '100% automático e sem edição manual',
+      accentColor: '#eab308',
     },
   },
 ];
 
 const INITIAL_MANIFEST: VideoManifest = {
-  version: '1.0',
+  title: 'Vídeo Sem Título',
+  version: '2.0',
   jobId: `job_${Date.now()}`,
   userId: 'user_default',
-  videoType: 'motion_narrated',
-  presetId: DEFAULT_STYLE_PRESETS[0].id,
+  videoType: 'viral_hormozi',
+  presetId: DEFAULT_STYLE_PRESETS[1]?.id || 'kinetic_yellow',
   aspectRatio: '9:16',
   resolution: { width: 1080, height: 1920 },
   audio: {
+    voiceTone: 'energetic',
     ttsVoiceId: 'pt-BR-AntonioNeural',
     bgMusicUrl: 'https://cdn.freesound.org/previews/612/612610_5674468-lq.mp3',
-    bgMusicVolume: 0.12,
+    bgMusicVolume: 0.14,
+    sfxEnabled: true,
   },
   scenes: DEFAULT_SCENES,
   subtitles: {
@@ -162,7 +167,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     set((state) => ({
       manifest: {
         ...state.manifest,
-        scenes: state.manifest.scenes.map((sc) =>
+        scenes: state.manifest.scenes.map((sc: ScriptScene) =>
           sc.id === sceneId ? { ...sc, ...updates } : sc
         ),
       },
@@ -178,6 +183,9 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       text: 'Insira aqui o roteiro da nova cena...',
       durationSec: 3.5,
       componentType: 'CardFrase',
+      audioUrl: '/api/tts?text=Insira%20aqui%20o%20roteiro%20da%20nova%20cena...&lang=pt-BR',
+      brollImageUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1080&q=85',
+      sfxType: 'whoosh',
       componentProps: {
         headline: 'NOVO DESTAQUE',
         subtext: 'Personalize o texto desta cena',
@@ -188,7 +196,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
 
     const updated = [...manifest.scenes];
     updated.splice(targetIdx, 0, newScene);
-    const reindexed = updated.map((sc, i) => ({ ...sc, sceneIndex: i }));
+    const reindexed = updated.map((sc: ScriptScene, i: number) => ({ ...sc, sceneIndex: i }));
 
     set((state) => ({
       manifest: { ...state.manifest, scenes: reindexed },
@@ -198,10 +206,10 @@ export const useStudioStore = create<StudioState>((set, get) => ({
 
   removeScene: (sceneId: string) => {
     const { manifest } = get();
-    if (manifest.scenes.length <= 1) return; // Keep at least 1 scene
+    if (manifest.scenes.length <= 1) return;
     const filtered = manifest.scenes
-      .filter((s) => s.id !== sceneId)
-      .map((sc, i) => ({ ...sc, sceneIndex: i }));
+      .filter((s: ScriptScene) => s.id !== sceneId)
+      .map((sc: ScriptScene, i: number) => ({ ...sc, sceneIndex: i }));
 
     set((state) => ({
       manifest: { ...state.manifest, scenes: filtered },
@@ -213,8 +221,9 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     const { manifest } = get();
     const result = Array.from(manifest.scenes);
     const [removed] = result.splice(startIndex, 1);
+    if (!removed) return;
     result.splice(endIndex, 0, removed);
-    const reindexed = result.map((sc, i) => ({ ...sc, sceneIndex: i }));
+    const reindexed = result.map((sc: ScriptScene, i: number) => ({ ...sc, sceneIndex: i }));
 
     set((state) => ({
       manifest: { ...state.manifest, scenes: reindexed },
@@ -289,6 +298,6 @@ export const useStudioStore = create<StudioState>((set, get) => ({
 
   getTotalDuration: () => {
     const { manifest } = get();
-    return manifest.scenes.reduce((acc, sc) => acc + sc.durationSec, 0);
+    return manifest.scenes.reduce((acc: number, sc: ScriptScene) => acc + (sc.durationSec || 0), 0);
   },
 }));

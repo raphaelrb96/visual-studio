@@ -64,7 +64,7 @@ export default function Step3EditorPage() {
 
   const totalDuration = getTotalDuration();
   const activeScene =
-    manifest.scenes.find((sc) => sc.id === selectedSceneId) || manifest.scenes[0];
+    manifest.scenes.find((sc: any) => sc.id === selectedSceneId) || manifest.scenes[0];
 
   const [activeInspectorTab, setActiveInspectorTab] = useState<'scene' | 'audio' | 'subtitles'>('scene');
 
@@ -531,7 +531,7 @@ export default function Step3EditorPage() {
 
           {/* Scene Blocks */}
           <div className="w-full h-full flex gap-1">
-            {manifest.scenes.map((sc, idx) => {
+            {manifest.scenes.map((sc: any, idx: number) => {
               const widthRatio = (sc.durationSec / totalDuration) * 100;
               const isSelected = selectedSceneId === sc.id;
 

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   Film,
@@ -11,64 +11,43 @@ import {
   Trash2,
   ExternalLink,
   PlusCircle,
+  Loader2,
 } from 'lucide-react';
+import { useAuth } from '@/app/lib/AuthContext';
+import { getUserVideos, deleteDocument, VideoRecord } from '@/app/lib/firestore';
 
 export default function VideosPage() {
+  const { user } = useAuth();
   const [filter, setFilter] = useState<'all' | 'ready' | 'processing' | 'draft'>('all');
   const [search, setSearch] = useState('');
+  const [videos, setVideos] = useState<VideoRecord[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const videos = [
-    {
-      id: 'vid-1',
-      title: 'A Maior Revolução de IA nos Negócios',
-      preset: 'Dark Vox',
-      format: '9:16',
-      duration: '00:17.5',
-      status: 'ready',
-      createdAt: 'Hoje, 14:32',
-      thumbnail: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80',
-    },
-    {
-      id: 'vid-2',
-      title: 'Top 5 Estratégias de Vídeo Vertical',
-      preset: 'Kinetic Yellow',
-      format: '9:16',
-      duration: '00:32.0',
-      status: 'ready',
-      createdAt: 'Ontem, 19:15',
-      thumbnail: 'https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?auto=format&fit=crop&w=600&q=80',
-    },
-    {
-      id: 'vid-3',
-      title: 'Distribuição e Audiência em 2026',
-      preset: 'Cyber News',
-      format: '16:9',
-      duration: '00:45.0',
-      status: 'processing',
-      createdAt: 'Ontem, 11:20',
-      thumbnail: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&w=600&q=80',
-    },
-    {
-      id: 'vid-4',
-      title: 'Roteiro de VSL Programático',
-      preset: 'Minimalist Clean',
-      format: '9:16',
-      duration: '00:15.0',
-      status: 'draft',
-      createdAt: '24 de Out, 18:04',
-      thumbnail: 'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=600&q=80',
-    },
-    {
-      id: 'vid-5',
-      title: 'Acelerando Vendas com Motion Graphics',
-      preset: 'Neon Velocity',
-      format: '9:16',
-      duration: '00:28.0',
-      status: 'ready',
-      createdAt: '22 de Out, 09:30',
-      thumbnail: 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=600&q=80',
-    },
-  ];
+  useEffect(() => {
+    if (!user) return;
+    const load = async () => {
+      try {
+        setLoading(true);
+        const data = await getUserVideos(user.uid);
+        setVideos(data);
+      } catch (err) {
+        console.error('Erro ao listar vídeos:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [user]);
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Deseja realmente excluir este vídeo?')) return;
+    try {
+      await deleteDocument('videos', id);
+      setVideos((prev) => prev.filter((v) => v.id !== id));
+    } catch {
+      alert('Erro ao excluir vídeo');
+    }
+  };
 
   const filtered = videos.filter((v) => {
     if (filter !== 'all' && v.status !== filter) return false;
@@ -78,42 +57,49 @@ export default function VideosPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-800">
         <div>
-          <h1 className="text-2xl font-black text-white tracking-tight">Biblioteca de Vídeos</h1>
-          <p className="text-sm text-slate-400">Gerencie todos os seus vídeos gerados e rascunhos</p>
+          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight flex items-center gap-2.5">
+            <Film className="w-7 h-7 text-indigo-400" />
+            <span>Meus Vídeos</span>
+          </h1>
+          <p className="text-sm text-slate-400">
+            Gerencie, visualize e baixe todos os vídeos produzidos na sua conta
+          </p>
         </div>
+
         <Link
           href="/create"
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm shadow-lg shadow-indigo-600/30 transition-all self-start sm:self-auto"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg shadow-indigo-600/30 transition-all hover:scale-105 self-start sm:self-auto"
         >
           <PlusCircle className="w-4 h-4" />
-          <span>Criar Vídeo</span>
+          <span>Criar Novo Vídeo</span>
         </Link>
       </div>
 
-      {/* Filter and Search Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-        <div className="relative flex-1">
+      {/* Filtros e Busca */}
+      <div className="flex flex-col sm:flex-row items-center gap-4 justify-between">
+        <div className="relative w-full sm:w-72">
           <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por título ou preset..."
-            className="w-full bg-slate-900/80 border border-slate-700/80 rounded-xl pl-10 pr-4 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+            placeholder="Buscar por título..."
+            className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
           />
         </div>
 
-        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900/80 border border-slate-800">
+        <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
           {(['all', 'ready', 'processing', 'draft'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setFilter(tab)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-colors ${
                 filter === tab
-                  ? 'bg-indigo-600 text-white shadow'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
               }`}
             >
               {tab === 'all' ? 'Todos' : tab === 'ready' ? 'Prontos' : tab === 'processing' ? 'Renderizando' : 'Rascunhos'}
@@ -122,84 +108,84 @@ export default function VideosPage() {
         </div>
       </div>
 
-      {/* Video Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-        {filtered.map((video) => (
-          <div
-            key={video.id}
-            className="glass-panel glass-panel-hover rounded-2xl overflow-hidden border border-white/10 flex flex-col justify-between group"
+      {/* Conteúdo */}
+      {loading ? (
+        <div className="glass-panel rounded-3xl p-16 text-center flex flex-col items-center justify-center">
+          <Loader2 className="w-8 h-8 text-indigo-500 animate-spin mb-3" />
+          <p className="text-sm text-slate-400">Carregando seus vídeos salvos...</p>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="glass-panel rounded-3xl p-16 text-center border border-dashed border-slate-800">
+          <Film className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+          <h3 className="text-base font-bold text-white mb-1">Nenhum vídeo encontrado</h3>
+          <p className="text-xs text-slate-400 mb-6">
+            {search ? 'Nenhum resultado para os termos da busca.' : 'Você ainda não possui vídeos neste status.'}
+          </p>
+          <Link
+            href="/create"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs"
           >
-            <div className="relative aspect-video w-full bg-slate-900 overflow-hidden">
-              <img
-                src={video.thumbnail}
-                alt={video.title}
-                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 opacity-80 group-hover:opacity-100"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
-              <div className="absolute top-2.5 left-2.5">
-                {video.status === 'ready' && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                    Pronto (MP4)
+            <PlusCircle className="w-4 h-4" />
+            <span>Criar Vídeo Agora</span>
+          </Link>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {filtered.map((video) => (
+            <div
+              key={video.id}
+              className="glass-panel rounded-2xl overflow-hidden border border-white/10 hover:border-indigo-500/40 transition-all flex flex-col justify-between"
+            >
+              <div className="p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+                    {video.format || '9:16'}
                   </span>
-                )}
-                {video.status === 'processing' && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-yellow-500/20 text-yellow-300 border border-yellow-500/40 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-ping" />
-                    Processando
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                      video.status === 'ready'
+                        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                        : video.status === 'processing'
+                        ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30 animate-pulse'
+                        : 'bg-slate-700 text-slate-300'
+                    }`}
+                  >
+                    {video.status === 'ready' ? 'Pronto' : video.status === 'processing' ? 'Processando' : 'Rascunho'}
                   </span>
-                )}
-                {video.status === 'draft' && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-slate-500/20 text-slate-300 border border-slate-500/40">
-                    Rascunho
-                  </span>
-                )}
-              </div>
-              <div className="absolute bottom-2.5 right-2.5 px-1.5 py-0.5 rounded bg-black/80 text-[10px] font-mono text-white/90">
-                {video.format} • {video.duration}
-              </div>
-            </div>
+                </div>
 
-            <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
-              <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400">
-                  Preset: {video.preset}
+                <h3 className="text-sm font-bold text-white line-clamp-2 mb-1">{video.title}</h3>
+                <p className="text-xs text-slate-400">{video.preset || 'Padrão'}</p>
+              </div>
+
+              <div className="p-4 bg-slate-900/60 border-t border-slate-800 flex items-center justify-between text-xs">
+                <span className="text-[11px] text-slate-500">
+                  {video.createdAt ? new Date(video.createdAt).toLocaleDateString('pt-BR') : 'Hoje'}
                 </span>
-                <h3 className="text-sm font-bold text-white mt-1 line-clamp-1 leading-snug">
-                  {video.title}
-                </h3>
-                <span className="text-[11px] text-slate-500 mt-1 block">{video.createdAt}</span>
-              </div>
-
-              <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
-                <Link
-                  href="/create/motion-narrated/step-3-editor"
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-300 hover:text-white"
-                >
-                  <Play className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>Abrir Editor</span>
-                </Link>
-
-                <div className="flex items-center gap-1">
-                  {video.status === 'ready' && (
-                    <button
+                <div className="flex items-center gap-2">
+                  {video.videoUrl && (
+                    <a
+                      href={video.videoUrl}
+                      download
+                      className="p-1.5 rounded-lg bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600 hover:text-white transition-colors"
                       title="Download MP4"
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
                     >
                       <Download className="w-3.5 h-3.5" />
-                    </button>
+                    </a>
                   )}
                   <button
+                    onClick={() => handleDelete(video.id)}
+                    className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:bg-rose-500/20 hover:text-rose-400 transition-colors"
                     title="Excluir"
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition-colors"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
