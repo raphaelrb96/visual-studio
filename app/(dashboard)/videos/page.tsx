@@ -2,50 +2,54 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Film,
   Search,
-  Filter,
-  Play,
   Download,
   Trash2,
   ExternalLink,
   PlusCircle,
   Loader2,
+  Play,
+  Edit3,
 } from 'lucide-react';
 import { useAuth } from '@/app/lib/AuthContext';
 import { getUserVideos, deleteDocument, VideoRecord } from '@/app/lib/firestore';
 
 export default function VideosPage() {
   const { user } = useAuth();
+  const router = useRouter();
   const [filter, setFilter] = useState<'all' | 'ready' | 'processing' | 'draft'>('all');
   const [search, setSearch] = useState('');
   const [videos, setVideos] = useState<VideoRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const loadVideos = async () => {
     if (!user) return;
-    const load = async () => {
-      try {
-        setLoading(true);
-        const data = await getUserVideos(user.uid);
-        setVideos(data);
-      } catch (err) {
-        console.error('Erro ao listar vídeos:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
+    try {
+      setLoading(true);
+      const data = await getUserVideos(user.uid);
+      setVideos(data);
+    } catch (err) {
+      console.error('Erro ao listar vídeos:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadVideos();
   }, [user]);
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Deseja realmente excluir este vídeo?')) return;
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (!confirm('Deseja realmente excluir este projeto/vídeo?')) return;
     try {
-      await deleteDocument('videos', id);
+      await deleteDocument('projects', id);
       setVideos((prev) => prev.filter((v) => v.id !== id));
     } catch {
-      alert('Erro ao excluir vídeo');
+      alert('Erro ao excluir projeto');
     }
   };
 
@@ -62,10 +66,10 @@ export default function VideosPage() {
         <div>
           <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight flex items-center gap-2.5">
             <Film className="w-7 h-7 text-indigo-400" />
-            <span>Meus Vídeos</span>
+            <span>Meus Vídeos & Projetos</span>
           </h1>
           <p className="text-sm text-slate-400">
-            Gerencie, visualize e baixe todos os vídeos produzidos na sua conta
+            Gerencie, continue editando rascunhos e visualize vídeos concluídos
           </p>
         </div>
 
@@ -78,48 +82,54 @@ export default function VideosPage() {
         </Link>
       </div>
 
-      {/* Filtros e Busca */}
-      <div className="flex flex-col sm:flex-row items-center gap-4 justify-between">
-        <div className="relative w-full sm:w-72">
-          <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por título..."
-            className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-          />
-        </div>
-
-        <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-          {(['all', 'ready', 'processing', 'draft'] as const).map((tab) => (
+      {/* Barra de Filtros e Busca */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900 border border-slate-800 text-xs">
+          {(
+            [
+              { key: 'all', label: 'Todos' },
+              { key: 'ready', label: 'Prontos' },
+              { key: 'processing', label: 'Renderizando' },
+              { key: 'draft', label: 'Rascunhos' },
+            ] as const
+          ).map((t) => (
             <button
-              key={tab}
-              onClick={() => setFilter(tab)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-colors ${
-                filter === tab
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+              key={t.key}
+              onClick={() => setFilter(t.key)}
+              className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+                filter === t.key
+                  ? 'bg-indigo-600 text-white shadow'
+                  : 'text-slate-400 hover:text-white'
               }`}
             >
-              {tab === 'all' ? 'Todos' : tab === 'ready' ? 'Prontos' : tab === 'processing' ? 'Renderizando' : 'Rascunhos'}
+              {t.label}
             </button>
           ))}
         </div>
+
+        <div className="relative w-full sm:w-64">
+          <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            placeholder="Buscar por título..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+          />
+        </div>
       </div>
 
-      {/* Conteúdo */}
+      {/* Grid de Vídeos / Projetos */}
       {loading ? (
-        <div className="glass-panel rounded-3xl p-16 text-center flex flex-col items-center justify-center">
-          <Loader2 className="w-8 h-8 text-indigo-500 animate-spin mb-3" />
-          <p className="text-sm text-slate-400">Carregando seus vídeos salvos...</p>
+        <div className="min-h-[300px] flex items-center justify-center">
+          <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
         </div>
       ) : filtered.length === 0 ? (
-        <div className="glass-panel rounded-3xl p-16 text-center border border-dashed border-slate-800">
-          <Film className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-          <h3 className="text-base font-bold text-white mb-1">Nenhum vídeo encontrado</h3>
+        <div className="rounded-2xl border border-dashed border-slate-800 p-12 text-center">
+          <Film className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+          <h3 className="text-base font-bold text-white mb-1">Nenhum projeto ou vídeo encontrado</h3>
           <p className="text-xs text-slate-400 mb-6">
-            {search ? 'Nenhum resultado para os termos da busca.' : 'Você ainda não possui vídeos neste status.'}
+            {search ? 'Nenhum resultado para os termos da busca.' : 'Você ainda não possui projetos salvos.'}
           </p>
           <Link
             href="/create"
@@ -134,39 +144,58 @@ export default function VideosPage() {
           {filtered.map((video) => (
             <div
               key={video.id}
-              className="glass-panel rounded-2xl overflow-hidden border border-white/10 hover:border-indigo-500/40 transition-all flex flex-col justify-between"
+              onClick={() => router.push(`/create?id=${video.id}`)}
+              className="group cursor-pointer rounded-2xl bg-slate-900/60 border border-slate-800/80 hover:border-indigo-500/50 hover:bg-slate-900 transition-all duration-200 overflow-hidden flex flex-col justify-between"
             >
               <div className="p-5">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">
-                    {video.format || '9:16'}
+                    {video.aspectRatio || video.format || '9:16'}
                   </span>
                   <span
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                    className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
                       video.status === 'ready'
                         ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                        : video.status === 'processing'
+                        : video.status === 'processing' || video.status === 'rendering'
                         ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30 animate-pulse'
-                        : 'bg-slate-700 text-slate-300'
+                        : 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
                     }`}
                   >
-                    {video.status === 'ready' ? 'Pronto' : video.status === 'processing' ? 'Processando' : 'Rascunho'}
+                    {video.status === 'ready'
+                      ? 'Vídeo Pronto'
+                      : video.status === 'processing' || video.status === 'rendering'
+                      ? 'Processando'
+                      : 'Rascunho (Editar)'}
                   </span>
                 </div>
 
-                <h3 className="text-sm font-bold text-white line-clamp-2 mb-1">{video.title}</h3>
-                <p className="text-xs text-slate-400">{video.preset || 'Padrão'}</p>
+                <h3 className="text-sm font-bold text-white line-clamp-2 mb-1 group-hover:text-indigo-300 transition-colors">
+                  {video.title}
+                </h3>
+                <p className="text-xs text-slate-400">
+                  {video.duration ? `${Math.round(video.duration)}s de duração` : 'Projeto em edição'}
+                </p>
               </div>
 
-              <div className="p-4 bg-slate-900/60 border-t border-slate-800 flex items-center justify-between text-xs">
+              <div className="p-4 bg-slate-950/60 border-t border-slate-800/80 flex items-center justify-between text-xs">
                 <span className="text-[11px] text-slate-500">
-                  {video.createdAt ? new Date(video.createdAt).toLocaleDateString('pt-BR') : 'Hoje'}
+                  {video.updatedAt
+                    ? new Date(video.updatedAt).toLocaleDateString('pt-BR')
+                    : video.createdAt
+                    ? new Date(video.createdAt).toLocaleDateString('pt-BR')
+                    : 'Hoje'}
                 </span>
                 <div className="flex items-center gap-2">
+                  <span className="flex items-center gap-1 text-[11px] text-indigo-400 font-semibold group-hover:underline mr-1">
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>Abrir</span>
+                  </span>
+
                   {video.videoUrl && (
                     <a
                       href={video.videoUrl}
                       download
+                      onClick={(e) => e.stopPropagation()}
                       className="p-1.5 rounded-lg bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600 hover:text-white transition-colors"
                       title="Download MP4"
                     >
@@ -174,9 +203,9 @@ export default function VideosPage() {
                     </a>
                   )}
                   <button
-                    onClick={() => handleDelete(video.id)}
+                    onClick={(e) => handleDelete(e, video.id)}
                     className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:bg-rose-500/20 hover:text-rose-400 transition-colors"
-                    title="Excluir"
+                    title="Excluir projeto"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>

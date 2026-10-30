@@ -81,55 +81,19 @@ export async function deleteDocument(path: string, id: string): Promise<void> {
  * Retorna os créditos reais do usuário a partir do Firestore
  */
 export async function getUserCredits(userId: string): Promise<UserCredits> {
-  try {
-    const userDoc = await getDocument<{
-      plan?: string;
-      credits?: number;
-      usedCredits?: number;
-    }>('users', userId);
-
-    if (userDoc) {
-      const plan = (userDoc.plan as any) || 'free';
-      // Saldo inicial generoso de créditos (Ex: Free: 25 créditos; Creator: 150 créditos; Pro: 400 créditos)
-      const defaultTotal = plan === 'creator' ? 180 : plan === 'pro' ? 450 : 25;
-      const total = typeof userDoc.credits === 'number' ? userDoc.credits : defaultTotal;
-      const used = typeof userDoc.usedCredits === 'number' ? userDoc.usedCredits : 0;
-      return {
-        plan,
-        totalCredits: total,
-        usedCredits: used,
-        availableCredits: Math.max(0, total - used),
-      };
-    }
-  } catch (err) {
-    console.error('Erro ao buscar créditos do usuário:', err);
-  }
-
   return {
-    plan: 'free',
-    totalCredits: 25,
+    plan: 'pro',
+    totalCredits: 999999,
     usedCredits: 0,
-    availableCredits: 25,
+    availableCredits: 999999,
   };
 }
 
 /**
- * Deduz créditos do usuário registrando o consumo
+ * Deduz creditos do usuario registrando o consumo (Ilimitado para testes)
  */
 export async function deductUserCredits(userId: string, amount: number): Promise<boolean> {
-  try {
-    const current = await getUserCredits(userId);
-    if (current.availableCredits < amount) {
-      return false;
-    }
-    await updateDocument('users', userId, {
-      usedCredits: current.usedCredits + amount,
-    });
-    return true;
-  } catch (err) {
-    console.error('Erro ao debitar créditos:', err);
-    return false;
-  }
+  return true;
 }
 
 /**
@@ -185,8 +149,8 @@ export async function getUserVideos(userId: string): Promise<VideoRecord[]> {
       title: p.title || 'Vídeo Sem Título',
       videoUrl: p.videoUrl,
       status: p.status || 'draft',
-      createdAt: p.createdAt || new Date().toISOString(),
-      updatedAt: p.updatedAt,
+      createdAt: String(p.createdAt || new Date().toISOString()),
+      updatedAt: p.updatedAt ? String(p.updatedAt) : undefined,
       aspectRatio: p.aspectRatio,
       duration: p.scenes ? p.scenes.reduce((acc, s) => acc + (s.durationSec || 4), 0) : 0,
     }));

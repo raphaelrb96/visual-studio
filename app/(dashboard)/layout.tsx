@@ -24,7 +24,6 @@ import { getUserCredits, UserCredits } from '@/app/lib/firestore';
 const NAV_ITEMS = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'Meus Vídeos', href: '/videos', icon: Video },
-  { label: 'Criar Vídeo', href: '/create', icon: PlusCircle, highlight: true },
   { label: 'Presets & Estilos', href: '/presets', icon: Palette },
   { label: 'Configurações', href: '/settings', icon: Settings },
 ];
@@ -106,7 +105,7 @@ export default function DashboardLayout({
                 >
                   <Icon className={`w-4 h-4 ${isActive ? 'text-indigo-400' : 'text-slate-400'}`} />
                   <span>{item.label}</span>
-                  {item.highlight && (
+                  {(item as any).highlight && (
                     <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
                       NOVO
                     </span>

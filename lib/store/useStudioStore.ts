@@ -102,6 +102,7 @@ const DEFAULT_SCENES: ScriptScene[] = [
 ];
 
 const INITIAL_MANIFEST: VideoManifest = {
+  id: 'manifest_default',
   title: 'Vídeo Sem Título',
   version: '2.0',
   jobId: `job_${Date.now()}`,

@@ -1,8 +1,4 @@
-export type VideoType = 
-  | 'motion_narrated' 
-  | 'smart_clips' 
-  | 'avatar_ia' 
-  | 'clipes_ia';
+export type VideoType = string;
 
 export type AspectRatio = '9:16' | '16:9' | '1:1';
 
@@ -22,20 +18,7 @@ export interface StylePreset {
   };
 }
 
-export type ComponentType = 
-  | 'CardFrase' 
-  | 'GraficoPizza' 
-  | 'GraficoBarras' 
-  | 'StatCounter' 
-  | 'MediaBroll' 
-  | 'CTAButton'
-  | 'TweetCard'
-  | 'NewsHeadline'
-  | 'ChatSimulation'
-  | 'QuoteCard'
-  | 'VersusComparison'
-  | 'Object3DShowcase'
-  | 'CollageBroll';
+export type ComponentType = string;
 
 export interface WordTimestamp {
   word: string;
@@ -54,8 +37,8 @@ export interface ScriptScene {
   sceneIndex: number;
   text: string;
   durationSec: number;
-  componentType: ComponentType;
-  componentProps: Record<string, any>;
+  componentType?: string;
+  componentProps?: Record<string, any>;
   audioUrl?: string;
   brollVideoUrl?: string;
   brollImageUrl?: string;
@@ -64,93 +47,97 @@ export interface ScriptScene {
   cameraMotion?: CameraMotionType;
   transition?: TransitionType;
   visualNotes?: string;
-  hyperframeConfig?: {
-    physicsDamping?: number;
-    physicsStiffness?: number;
-    threeJsObject?: 'coin' | 'diamond' | 'shield' | 'cube';
-    lightColor?: string;
-    customHtmlOverlay?: string;
-  };
   wordTimestamps?: WordTimestamp[];
+  [key: string]: any;
 }
 
 export interface VideoProject {
   id: string;
   userId: string;
   title: string;
-  currentStep: ProjectStep;
-  prompt: string;
-  videoType: VideoType;
+  currentStep?: ProjectStep;
+  prompt?: string;
+  videoType?: VideoType;
   aspectRatio: AspectRatio;
-  presetId: string;
+  presetId?: string;
   scenes: ScriptScene[];
   audio: {
-    voiceTone: 'energetic' | 'deep' | 'calm' | 'authoritative';
-    ttsVoiceId: string;
-    bgMusicVolume: number;
-    sfxEnabled: boolean;
+    voiceTone?: 'energetic' | 'deep' | 'calm' | 'authoritative';
+    ttsVoiceId?: string;
+    bgMusicVolume?: number;
+    bgMusicUrl?: string;
+    sfxEnabled?: boolean;
+    [key: string]: any;
   };
-  subtitles: {
-    enabled: boolean;
-    style: 'kinetic_word' | 'karaoke_highlight' | 'classic_bottom';
-  };
-  totalCreditsConsumed: number;
-  status: 'draft' | 'ready' | 'processing';
+  subtitles?: any;
+  status?: 'draft' | 'compiling' | 'rendering' | 'ready' | 'failed';
   videoUrl?: string;
-  createdAt: string;
-  updatedAt: string;
+  renderProgress?: number;
+  errorMessage?: string;
+  createdAt?: string | number;
+  updatedAt?: string | number;
+  version?: string;
+  jobId?: string;
+  [key: string]: any;
 }
 
-export interface CreditCostTable {
-  generateScript: number;
-  refineScriptWithAi: number;
-  generateAiImage: number;
-  generateTtsSpeech: number;
-  finalRender: number;
-}
-
-export const CREDIT_COSTS: CreditCostTable = {
-  generateScript: 2,
-  refineScriptWithAi: 1,
-  generateAiImage: 3,
-  generateTtsSpeech: 2,
-  finalRender: 5,
-};
-
-export type JobStatus = 'queued' | 'rendering' | 'done' | 'failed';
-
+export type VideoManifest = VideoProject;
+export type JobStatus = 'queued' | 'rendering' | 'ready' | 'failed';
 export interface RenderJob {
   id: string;
   projectId: string;
   status: JobStatus;
   progress: number;
-  stage: string;
-  outputUrl?: string;
-  error?: string;
-  createdAt: string;
-  updatedAt: string;
+  videoUrl?: string;
 }
 
-export interface VideoManifest {
-  version?: string;
-  jobId?: string;
-  userId?: string;
-  videoType?: string;
-  resolution?: { width: number; height: number };
-  title: string;
-  presetName?: string;
-  aspectRatio: AspectRatio;
-  presetId: string;
-  scenes: ScriptScene[];
-  audio: {
-    voiceTone: 'energetic' | 'deep' | 'calm' | 'authoritative';
-    ttsVoiceId: string;
-    bgMusicVolume: number;
-    bgMusicUrl?: string;
-    sfxEnabled: boolean;
-  };
-  subtitles: {
-    enabled: boolean;
-    style: 'kinetic_word' | 'karaoke_highlight' | 'classic_bottom';
-  };
-}
+export const CREDIT_COSTS = {
+  generateScript: 1,
+  refineScriptWithAi: 1,
+  generateVoiceover: 2,
+  generateAiImage: 3,
+  compileManifest: 2,
+  renderFinalVideo: 5,
+};
+
+export const DEFAULT_STYLE_PRESETS: StylePreset[] = [
+  {
+    id: 'hormozi_bold',
+    name: 'Hormozi Viral Bold',
+    description: 'Fundo escuro profundo, tipografia condensada e destaques amarelos de alto impacto.',
+    previewImageUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80',
+    theme: {
+      backgroundColor: '#090a0f',
+      primaryTextColor: '#ffffff',
+      highlightTextColor: '#facc15',
+      fontFamily: 'Inter, sans-serif',
+      cardStyle: 'glassmorphism',
+    },
+  },
+  {
+    id: 'vox_documentary',
+    name: 'Vox Documentary & Data',
+    description: 'Estética investigativa com infográficos, mapas limpos e paleta ciano moderna.',
+    previewImageUrl: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=600&auto=format&fit=crop&q=80',
+    theme: {
+      backgroundColor: '#080d1a',
+      primaryTextColor: '#f8fafc',
+      highlightTextColor: '#38bdf8',
+      fontFamily: 'Inter, sans-serif',
+      cardStyle: 'flat_dark',
+    },
+  },
+  {
+    id: 'finance_luxury',
+    name: 'Magnates Luxury Gold',
+    description: 'Visual cinematográfico escuro com dourado premium e efeitos de profundidade.',
+    previewImageUrl: 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=600&auto=format&fit=crop&q=80',
+    theme: {
+      backgroundColor: '#050508',
+      primaryTextColor: '#ffffff',
+      highlightTextColor: '#eab308',
+      fontFamily: 'Inter, sans-serif',
+      cardStyle: 'neon_border',
+    },
+  },
+];

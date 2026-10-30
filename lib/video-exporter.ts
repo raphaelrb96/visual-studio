@@ -5,7 +5,7 @@ export async function renderManifestToVideoBlob(
   manifest: VideoManifest,
   onProgress?: (percent: number, stageText: string) => void
 ): Promise<{ blob: Blob; url: string }> {
-  const preset = getPresetById(manifest.presetId);
+  const preset = getPresetById(manifest.presetId || "hormozi_bold");
   const width = manifest.aspectRatio === '16:9' ? 1280 : manifest.aspectRatio === '1:1' ? 1080 : 720;
   const height = manifest.aspectRatio === '16:9' ? 720 : manifest.aspectRatio === '1:1' ? 1080 : 1280;
 
