@@ -175,13 +175,7 @@ export default function DashboardLayout({
           </div>
 
           <div className="flex items-center gap-3">
-            <Link
-              href="/create"
-              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg shadow-indigo-600/30 transition-all hover:scale-105"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Gerar Vídeo</span>
-            </Link>
+            
 
             <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-xs font-bold text-white shadow-md uppercase">
               {user?.displayName ? user.displayName.slice(0, 2) : 'VS'}
