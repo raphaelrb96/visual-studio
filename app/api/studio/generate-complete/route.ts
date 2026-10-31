@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { ScriptScene, WordTimestamp, SfxType, CameraMotionType, TransitionType } from '@/types/studio';
 import { selectContextualBroll } from '@/lib/broll-library';
+import { getContextualMediaForScene } from '@/lib/curated-media';
 
 function buildWordTimestamps(text: string, durationSec: number): WordTimestamp[] {
   const words = text.trim().split(/\s+/).filter(Boolean);
@@ -35,6 +36,7 @@ export async function POST(req: NextRequest) {
       presetId = 'kinetic_yellow',
       targetDurationSec = 30,
       targetSceneCount = 6,
+      voiceId = 'antonio',
     } = body;
 
     const sceneCount = Math.max(4, Math.min(18, Number(targetSceneCount) || Math.round(Number(targetDurationSec) / 5) || 6));
@@ -43,18 +45,13 @@ export async function POST(req: NextRequest) {
     let rawScenes: Partial<ScriptScene>[] = [];
     let generatedTitle = prompt.slice(0, 52);
 
-    if (apiKey && apiKey !== 'YOUR_API_KEY') {
-      try {
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-
-        const systemInstruction = `
+    const systemInstruction = `
 Você é uma equipe de Diretores de Motion Graphics e Roteiristas Virais para Vídeos Curtos (Reels, TikTok, Shorts).
 O usuário quer criar um vídeo sobre: "${prompt}".
 Duração total alvo: ~${targetDurationSec} segundos.
 Quantidade exata de cenas: ${sceneCount} cenas.
 
-Você DEVE alternar entre a biblioteca de 13 componentes HyperFrame:
+Você DEVE alternar entre a biblioteca de 12 componentes HyperFrame:
 1. "Object3DShowcase": Objeto 3D real renderizado em WebGL (object3d: 'coin' | 'diamond' | 'shield' | 'cube', title: 'VALOR AGREGADO', subtitle: 'Ativo digital em ascensão').
 2. "CollageBroll": Colagem estilizada e dinâmica de 3 B-Rolls recortados com movimento Parallax Ken Burns (badge: 'CASO REAL', headline: 'IMPACTO VISUAL').
 3. "CardFrase": Headline curta em caixa alta com highlightWords e badge.
@@ -66,14 +63,7 @@ Você DEVE alternar entre a biblioteca de 13 componentes HyperFrame:
 9. "QuoteCard": Citação marcante de autoridade (quoteText, authorName, authorRole).
 10. "GraficoBarras": Ranking ou comparativo numérico (title, bars: [{label, value, formatted}]).
 11. "GraficoPizza": Distribuição percentual (title, slices: [{label, value, color}]).
-12. "MediaBroll": Foco no B-Roll cinematográfico com overlayText curto.
-13. "CTAButton": Obrigatoriamente na última cena como chamada para ação direta.
-
-Para cada cena inclua também:
-- "sfxType": 'impact' | 'whoosh' | 'pop' | 'rise' | 'cash' | 'glitch' | 'cinematic_boom' | 'typing'
-- "cameraMotion": 'zoom_in' | 'zoom_out' | 'pan_left' | 'pan_right' | 'float_3d'
-- "transition": 'spring_slide' | 'flash_zoom' | 'glitch_cut' | 'fade'
-- "visualNotes": Diretriz técnica de direção visual da cena (iluminação, câmera, foco).
+12. "CTAButton": Obrigatoriamente na última cena como chamada para ação direta.
 
 Crie exatamente ${sceneCount} cenas no seguinte formato JSON puro:
 {
@@ -96,6 +86,11 @@ Crie exatamente ${sceneCount} cenas no seguinte formato JSON puro:
 }
 `;
 
+    // 1. Tenta Gemini se configurado
+    if (apiKey && apiKey !== 'YOUR_API_KEY') {
+      try {
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
         const result = await model.generateContent(systemInstruction);
         const responseText = result.response
           .text()
@@ -109,10 +104,41 @@ Crie exatamente ${sceneCount} cenas no seguinte formato JSON puro:
           if (parsed.title) generatedTitle = parsed.title;
         }
       } catch (aiErr) {
-        console.warn('Fallback inteligente ativado:', aiErr);
+        console.warn('Gemini fallback to Pollinations OpenAI:', aiErr);
       }
     }
 
+    // 2. Tenta Pollinations OpenAI JSON se não tiver Gemini
+    if (rawScenes.length === 0) {
+      try {
+        const aiRes = await fetch('https://text.pollinations.ai/openai', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'openai',
+            messages: [
+              { role: 'system', content: systemInstruction },
+              { role: 'user', content: `Tema: "${prompt}"` },
+            ],
+            response_format: { type: 'json_object' },
+            temperature: 0.7,
+          }),
+        });
+
+        if (aiRes.ok) {
+          const aiData = await aiRes.json();
+          const parsed = JSON.parse(aiData.choices?.[0]?.message?.content || '{}');
+          if (parsed?.scenes && Array.isArray(parsed.scenes) && parsed.scenes.length > 0) {
+            rawScenes = parsed.scenes;
+            if (parsed.title) generatedTitle = parsed.title;
+          }
+        }
+      } catch (pollErr) {
+        console.warn('Pollinations error:', pollErr);
+      }
+    }
+
+    // 3. Fallback Dinâmico Estruturado
     if (rawScenes.length === 0) {
       rawScenes = buildDynamicHyperframeScenes(prompt, styleMode, sceneCount);
     }
@@ -124,7 +150,9 @@ Crie exatamente ${sceneCount} cenas no seguinte formato JSON puro:
     const enrichedScenes: ScriptScene[] = rawScenes.map((sc, idx) => {
       const cleanText = sc.text || 'Descubra como transformar seus resultados hoje mesmo.';
       const durationSec = estimateSpeechDuration(cleanText);
+      const curatedMedia = getContextualMediaForScene(cleanText, prompt, idx);
       const broll = selectContextualBroll(`${prompt} ${cleanText}`, idx);
+      const finalImage = curatedMedia || broll.imageUrl;
 
       return {
         id: `scene-${idx + 1}-${Date.now()}`,
@@ -134,19 +162,19 @@ Crie exatamente ${sceneCount} cenas no seguinte formato JSON puro:
         componentType: sc.componentType || 'CardFrase',
         componentProps: {
           ...sc.componentProps,
-          imageUrl: sc.componentProps?.imageUrl || broll.imageUrl,
-          images: sc.componentProps?.images || broll.collageImages,
+          imageUrl: sc.componentProps?.imageUrl || finalImage,
+          images: sc.componentProps?.images || [finalImage, finalImage],
         },
-        audioUrl: `/api/tts?text=${encodeURIComponent(cleanText)}&lang=pt-BR`,
+        audioUrl: `/api/tts?text=${encodeURIComponent(cleanText)}&voice=${encodeURIComponent(voiceId)}`,
         brollVideoUrl: broll.videoUrl,
-        brollImageUrl: broll.imageUrl,
-        collageImages: broll.collageImages,
+        brollImageUrl: finalImage,
+        collageImages: [finalImage, finalImage],
         sfxType: sc.sfxType || sfxOptions[idx % sfxOptions.length],
         cameraMotion: sc.cameraMotion || camOptions[idx % camOptions.length],
         transition: sc.transition || transOptions[idx % transOptions.length],
         visualNotes:
           sc.visualNotes ||
-          `Cena #${idx + 1}: Física elástica HyperFrame ativa + Movimento Parallax Ken Burns.`,
+          `Cena #${idx + 1}: Animação Motion Graphics dinâmica ativa.`,
         hyperframeConfig: {
           physicsDamping: 14,
           physicsStiffness: 130,
@@ -198,38 +226,26 @@ function buildDynamicHyperframeScenes(prompt: string, styleMode: string, targetC
       sfxType: 'cash',
       cameraMotion: 'float_3d',
       transition: 'spring_slide',
-      visualNotes: 'Renderização Three.js WebGL 60fps com moeda dourada giratória e luzes neon.',
+      visualNotes: 'Cubo / Moeda 3D em rotação contínua WebGL com brilho de estúdio.',
       componentProps: {
         object3d: 'coin',
-        title: 'NOVA ECONOMIA',
-        subtitle: 'Ativos digitais com rendimento exponencial',
+        title: 'CRESCIMENTO EXPONENCIAL',
+        subtitle: 'Ativos digitais e tecnologia avançada',
       },
     },
     {
-      text: `Mais de 91 por cento dos negócios que ignorarem essa estrutura vão perder espaço ainda neste trimestre.`,
+      text: `Mais de 84% das pessoas que tentam esse método sem a estratégia certa acabam travando.`,
       componentType: 'StatCounter',
-      sfxType: 'whoosh',
-      cameraMotion: 'zoom_out',
-      transition: 'glitch_cut',
-      visualNotes: 'Contador numérico com mola elástica acelerada e tipografia pesada.',
-      componentProps: {
-        number: 91,
-        suffix: '%',
-        prefix: '',
-        label: 'Risco de Obsolescência',
-        description: 'Dados medidos nos maiores mercados digitais',
-      },
-    },
-    {
-      text: `Confira os bastidores visuais de quem já implementou essa engrenagem de retenção em escala.`,
-      componentType: 'CollageBroll',
       sfxType: 'pop',
       cameraMotion: 'pan_right',
-      transition: 'spring_slide',
-      visualNotes: 'Colagem multi-camadas (3 recortes simultâneos) com rotação inversa estilo Vox.',
+      transition: 'glitch_cut',
+      visualNotes: 'Contador gigante animando de 0 a 84% com pulso neon.',
       componentProps: {
-        badge: 'BASTIDORES REAIS',
-        headline: 'ESTRUTURA EM CAMADAS',
+        number: 84,
+        suffix: '%',
+        prefix: '+',
+        label: 'Atenção e Retenção no Formato Vertical',
+        description: 'Dados comprovados do comportamento de consumo',
       },
     },
     {
@@ -255,7 +271,7 @@ function buildDynamicHyperframeScenes(prompt: string, styleMode: string, targetC
       visualNotes: 'Simulação de mensagens com check azul duplo e pop elástico.',
       componentProps: {
         contactName: 'Diretor Comercial',
-        senderText: 'Você viu o CTR do vídeo novo com objetos 3D?',
+        senderText: 'Você viu o CTR do vídeo novo com elementos 3D?',
         replyText: 'Bateu 4.8x mais retenção que o criativo estático!',
       },
     },
@@ -269,7 +285,7 @@ function buildDynamicHyperframeScenes(prompt: string, styleMode: string, targetC
       componentProps: {
         title: 'TAXA DE RETENÇÃO POR FORMATO',
         bars: [
-          { label: 'Motion 3D + B-Roll', value: 94, formatted: '94%' },
+          { label: 'Motion + B-Roll', value: 94, formatted: '94%' },
           { label: 'Corte Simples', value: 52, formatted: '52%' },
           { label: 'Post Estático', value: 18, formatted: '18%' },
         ],
@@ -302,7 +318,7 @@ function buildDynamicHyperframeScenes(prompt: string, styleMode: string, targetC
       },
     },
     {
-      text: `Veja a repercussão real de quem já transformou códigos em vídeos de alta conversão.`,
+      text: `Veja a repercussão real de quem já transformou ideias em vídeos de alta conversão.`,
       componentType: 'TweetCard',
       sfxType: 'pop',
       cameraMotion: 'float_3d',
@@ -311,7 +327,7 @@ function buildDynamicHyperframeScenes(prompt: string, styleMode: string, targetC
       componentProps: {
         authorName: 'Tech Founder',
         authorHandle: '@founder_ai',
-        tweetText: 'Substituímos 12 horas de After Effects por 60 segundos de geração em código HyperFrame + Three.js.',
+        tweetText: 'Substituímos 12 horas de After Effects por 60 segundos de geração com IA e Motion Graphics.',
       },
     },
     {
@@ -324,7 +340,7 @@ function buildDynamicHyperframeScenes(prompt: string, styleMode: string, targetC
       componentProps: {
         title: 'IMPACTO NA CONVERSÃO',
         slices: [
-          { label: 'Gancho Visual 3D', value: 55, color: '#eab308' },
+          { label: 'Gancho Visual Motion', value: 55, color: '#eab308' },
           { label: 'Ritmo & Sound Design', value: 30, color: '#38bdf8' },
           { label: 'Copywriting', value: 15, color: '#a855f7' },
         ],
@@ -346,7 +362,6 @@ function buildDynamicHyperframeScenes(prompt: string, styleMode: string, targetC
   ];
 
   if (targetCount <= pool.length) {
-    // Garante que a última cena seja sempre CTAButton
     const selected = pool.slice(0, targetCount - 1);
     selected.push(pool[pool.length - 1]);
     return selected;

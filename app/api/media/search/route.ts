@@ -1,70 +1,124 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 /**
- * GET /api/media/search?query=medico&type=all
- * Busca imagens reais via Unsplash Source API e vídeos reais Pexels/Mixkit abertos
- * com CORS liberado e URLs permanentes para uso comercial.
+ * GET /api/media/search?query=...
+ * Busca imagens reais via Openverse API + Wikimedia Commons API + Geração Contextual IA
+ * Nunca retorna imagens fixas desconexas. Todas as imagens correspondem ao tema pesquisado.
  */
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const query = searchParams.get('query') || 'business';
+    const rawQuery = (searchParams.get('query') || 'cinematic technology').trim();
 
-    // Termos limpos em inglês/português para máxima precisão de busca
-    const cleanTerm = encodeURIComponent(query.trim());
+    const results: Array<{
+      id: string;
+      title: string;
+      type: 'image';
+      thumb: string;
+      url: string;
+      source: string;
+    }> = [];
 
-    // Mídias reais curadas com alta resolução
-    const REAL_IMAGE_RESULTS = [
-      {
-        id: `img-${Date.now()}-1`,
-        title: `${query} • Cena Principal`,
-        type: 'image',
-        thumb: `https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=600&q=80`,
-        url: `https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=1080&q=85`,
-      },
-      {
-        id: `img-${Date.now()}-2`,
-        title: `${query} • Profissional`,
-        type: 'image',
-        thumb: `https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=600&q=80`,
-        url: `https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1080&q=85`,
-      },
-      {
-        id: `img-${Date.now()}-3`,
-        title: `${query} • Escritório & Foco`,
-        type: 'image',
-        thumb: `https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=600&q=80`,
-        url: `https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1080&q=85`,
-      },
-      {
-        id: `img-${Date.now()}-4`,
-        title: `${query} • Tecnologia & Crescimento`,
-        type: 'image',
-        thumb: `https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80`,
-        url: `https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1080&q=85`,
-      },
-      {
-        id: `img-${Date.now()}-5`,
-        title: `${query} • Saúde & Bem-estar`,
-        type: 'image',
-        thumb: `https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&w=600&q=80`,
-        url: `https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&w=1080&q=85`,
-      },
-      {
-        id: `img-${Date.now()}-6`,
-        title: `${query} • Mobile & Social`,
-        type: 'image',
-        thumb: `https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?auto=format&fit=crop&w=600&q=80`,
-        url: `https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?auto=format&fit=crop&w=1080&q=85`,
-      },
+    // 1. Busca em tempo real no Openverse (Creative Commons Photography)
+    try {
+      const ovUrl = `https://api.openverse.org/v1/images/?q=${encodeURIComponent(
+        rawQuery
+      )}&page_size=8&aspect_ratio=tall,wide,square`;
+      const ovRes = await fetch(ovUrl, {
+        headers: { 'User-Agent': 'VisualStudioPro/2.5' },
+        next: { revalidate: 300 },
+      });
+
+      if (ovRes.ok) {
+        const ovData = await ovRes.json();
+        const items = Array.isArray(ovData.results) ? ovData.results : [];
+        for (const item of items.slice(0, 5)) {
+          if (item.url && typeof item.url === 'string' && item.url.startsWith('http')) {
+            results.push({
+              id: `ov-${item.id || Math.random().toString(36).slice(2, 8)}`,
+              title: item.title ? String(item.title).slice(0, 50) : `${rawQuery} • Stock`,
+              type: 'image',
+              thumb: item.thumbnail || item.url,
+              url: item.url,
+              source: 'Stock Real',
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Openverse search warning:', e);
+    }
+
+    // 2. Busca complementar no Wikimedia Commons (alta resolução)
+    if (results.length < 5) {
+      try {
+        const wikiUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6&gsrsearch=filetype:bitmap%20${encodeURIComponent(
+          rawQuery
+        )}&gsrlimit=6&prop=imageinfo&iiprop=url&iiurlwidth=1080&format=json`;
+        const wikiRes = await fetch(wikiUrl, {
+          headers: { 'User-Agent': 'VisualStudioPro/2.5 (https://visualstudio.app)' },
+        });
+        if (wikiRes.ok) {
+          const wikiData = await wikiRes.json();
+          const pages = Object.values(wikiData.query?.pages || {}) as any[];
+          for (const p of pages) {
+            const info = p?.imageinfo?.[0];
+            const imgUrl = info?.thumburl || info?.url;
+            if (imgUrl && !imgUrl.endsWith('.svg') && !imgUrl.endsWith('.gif')) {
+              results.push({
+                id: `wiki-${p.pageid}`,
+                title: String(p.title || rawQuery).replace(/^File:/i, '').slice(0, 45),
+                type: 'image',
+                thumb: imgUrl,
+                url: imgUrl,
+                source: 'Wikimedia HD',
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Wikimedia search warning:', e);
+      }
+    }
+
+    // 3. Adiciona Imagens Cinematográficas Geradas sob Demanda para o termo exato pesquisado
+    const aiAngles = [
+      { suffix: 'cinematic lighting, dark moody atmosphere, 8k photography, ultra detailed', label: 'Cinema IA #1' },
+      { suffix: 'modern editorial photography, dramatic contrast, shallow depth of field, 8k', label: 'Editorial IA #2' },
+      { suffix: 'futuristic high contrast visual, professional studio lighting, photorealistic', label: 'Conceito IA #3' },
     ];
+
+    aiAngles.forEach((angle, idx) => {
+      const seed = Math.abs(hashCode(`${rawQuery}-${idx}`)) % 99999;
+      const fullPrompt = `${rawQuery}, ${angle.suffix}`;
+      const aiUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(
+        fullPrompt
+      )}?width=1080&height=1350&seed=${seed}&nologo=true`;
+      results.push({
+        id: `ai-search-${seed}-${idx}`,
+        title: `${rawQuery} • ${angle.label}`,
+        type: 'image',
+        thumb: aiUrl,
+        url: aiUrl,
+        source: 'IA Generativa',
+      });
+    });
 
     return NextResponse.json({
       success: true,
-      query,
-      results: REAL_IMAGE_RESULTS,
+      query: rawQuery,
+      results: results.slice(0, 9),
     });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error?.message }, { status: 500 });
   }
+}
+
+function hashCode(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return hash;
 }

@@ -37,7 +37,7 @@ export const MotionPlayer: React.FC<MotionPlayerProps> = ({
     getTotalDuration,
   } = useStudioStore();
 
-  const preset = getPresetById(manifest.presetId);
+  const preset = getPresetById(manifest.presetId || 'kinetic_yellow');
   const totalDuration = getTotalDuration();
 
   const animationFrameRef = useRef<number | null>(null);

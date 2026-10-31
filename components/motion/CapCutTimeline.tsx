@@ -106,9 +106,9 @@ export const CapCutTimeline: React.FC<CapCutTimelineProps> = ({ className = '' }
   const playheadPercent = Math.min(100, Math.max(0, (currentTime / totalDuration) * 100));
 
   return (
-    <div className={`rounded-3xl bg-[#090e1a]/95 border border-white/10 shadow-2xl p-4 sm:p-5 space-y-3 ${className}`}>
+    <div className={`h-full flex flex-col justify-between bg-[#090e1a]/95 border border-white/10 rounded-2xl shadow-2xl p-3 sm:p-4 overflow-hidden ${className}`}>
       {/* Barra de Ferramentas NLE Estilo CapCut Pro */}
-      <div className="flex items-center justify-between border-b border-slate-800 pb-3 flex-wrap gap-3">
+      <div className="flex items-center justify-between border-b border-slate-800 pb-2.5 flex-wrap gap-2 shrink-0">
         <div className="flex items-center gap-2">
           <button
             type="button"

@@ -1,40 +1,50 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { EdgeTTS } from 'node-edge-tts';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
 /**
- * GET /api/tts?text=...&lang=pt-BR
- * Gera áudio MP3 de voz neural real em Português e retorna como stream audio/mpeg
- * para que não haja bloqueio de CORS e possa ser gravado/mixado diretamente no vídeo final.
+ * GET /api/tts?text=...&voice=...
+ * Gera áudio MP3 de voz neural humana real em Português (Azure Speech / Edge TTS)
+ * Zero som robótico do Google Tradutor!
  */
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const text = searchParams.get('text') || '';
-    const lang = searchParams.get('lang') || 'pt-BR';
+    const voiceParam = searchParams.get('voice') || 'antonio';
 
     if (!text.trim()) {
       return NextResponse.json({ error: 'Texto obrigatório' }, { status: 400 });
     }
 
-    // Limita em 200 caracteres por segmento de cena para máxima fluidez
-    const cleanText = text.trim().slice(0, 240);
-    const ttsUrl = `https://translate.googleapis.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(
-      cleanText
-    )}&tl=${encodeURIComponent(lang)}&client=tw-ob`;
+    // Vozes neurais brasileiras ultra realistas
+    const voiceMap: Record<string, string> = {
+      antonio: 'pt-BR-AntonioNeural',
+      francisca: 'pt-BR-FranciscaNeural',
+      nicolau: 'pt-BR-NicolauNeural',
+      thalita: 'pt-BR-ThalitaNeural',
+    };
 
-    const response = await fetch(ttsUrl, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      },
-    });
+    const selectedVoice = voiceMap[voiceParam.toLowerCase()] || 'pt-BR-AntonioNeural';
 
-    if (!response.ok) {
-      throw new Error(`TTS upstream status ${response.status}`);
+    const tempFileName = `tts_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.mp3`;
+    const tempFilePath = path.join(os.tmpdir(), tempFileName);
+
+    const tts = new EdgeTTS({ voice: selectedVoice });
+    await tts.ttsPromise(text.trim().slice(0, 500), tempFilePath);
+
+    if (!fs.existsSync(tempFilePath)) {
+      throw new Error('Falha ao gerar arquivo de áudio neural');
     }
 
-    const arrayBuffer = await response.arrayBuffer();
+    const audioBuffer = fs.readFileSync(tempFilePath);
 
-    return new NextResponse(arrayBuffer, {
+    // Limpa o arquivo temporário
+    fs.unlink(tempFilePath, () => {});
+
+    return new NextResponse(audioBuffer, {
       status: 200,
       headers: {
         'Content-Type': 'audio/mpeg',
@@ -43,7 +53,10 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Erro na rota TTS:', error);
-    return NextResponse.json({ error: 'Falha ao sintetizar voz' }, { status: 500 });
+    console.error('Erro na rota TTS Neural:', error);
+    return NextResponse.json(
+      { error: 'Falha ao sintetizar voz neural humana' },
+      { status: 500 }
+    );
   }
 }

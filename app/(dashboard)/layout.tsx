@@ -7,7 +7,6 @@ import {
   Film,
   LayoutDashboard,
   Video,
-  PlusCircle,
   Palette,
   Settings,
   Zap,
@@ -16,7 +15,6 @@ import {
   Sparkles,
   Cloud,
   LogOut,
-  Briefcase,
 } from 'lucide-react';
 import { useAuth } from '@/app/lib/AuthContext';
 import { getUserCredits, UserCredits } from '@/app/lib/firestore';
@@ -43,6 +41,11 @@ export default function DashboardLayout({
       getUserCredits(user.uid).then(setCredits);
     }
   }, [user]);
+
+  // Se a rota atual for /create (estúdio e criação de vídeo), renderiza em tela cheia (100% fullscreen sem sidebar)
+  if (pathname?.startsWith('/create')) {
+    return <main className="min-h-screen w-full bg-[#070a12] text-slate-100">{children}</main>;
+  }
 
   const percentUsed = credits
     ? Math.min(100, Math.round((credits.availableCredits / credits.totalCredits) * 100))
@@ -105,11 +108,6 @@ export default function DashboardLayout({
                 >
                   <Icon className={`w-4 h-4 ${isActive ? 'text-indigo-400' : 'text-slate-400'}`} />
                   <span>{item.label}</span>
-                  {(item as any).highlight && (
-                    <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                      NOVO
-                    </span>
-                  )}
                 </Link>
               );
             })}
@@ -118,7 +116,6 @@ export default function DashboardLayout({
 
         {/* Bottom Credits & Status Reais */}
         <div className="space-y-4 pt-4 border-t border-slate-800/80">
-          {/* Box de Créditos Reais */}
           <div className="p-3.5 rounded-2xl bg-gradient-to-br from-indigo-950/40 to-slate-900 border border-indigo-900/40">
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
@@ -140,7 +137,6 @@ export default function DashboardLayout({
             </span>
           </div>
 
-          {/* Botão de Upgrade SaaS */}
           <Link
             href="/#planos"
             className="w-full py-2 px-3 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/25 text-indigo-300 text-xs font-bold flex items-center justify-center gap-2 transition-colors"
@@ -149,7 +145,6 @@ export default function DashboardLayout({
             <span>Fazer Upgrade de Plano</span>
           </Link>
 
-          {/* User info & Signout */}
           <div className="flex items-center justify-between px-1 pt-2 border-t border-slate-800/80">
             <div className="text-xs truncate max-w-[140px]">
               <p className="font-semibold text-white truncate">{user?.displayName || 'Usuário'}</p>
@@ -175,8 +170,6 @@ export default function DashboardLayout({
           </div>
 
           <div className="flex items-center gap-3">
-            
-
             <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-xs font-bold text-white shadow-md uppercase">
               {user?.displayName ? user.displayName.slice(0, 2) : 'VS'}
             </div>
