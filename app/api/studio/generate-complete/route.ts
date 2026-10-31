@@ -3,6 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { ScriptScene, WordTimestamp, SfxType, CameraMotionType, TransitionType } from '@/types/studio';
 import { selectContextualBroll } from '@/lib/broll-library';
 import { getContextualMediaForScene } from '@/lib/curated-media';
+import { MotionTemplateId } from '@/lib/motion-templates';
 
 function buildWordTimestamps(text: string, durationSec: number): WordTimestamp[] {
   const words = text.trim().split(/\s+/).filter(Boolean);
@@ -26,61 +27,184 @@ function estimateSpeechDuration(text: string): number {
   return Number(Math.max(3.8, Math.min(7.2, words / 2.6 + 0.8)).toFixed(1));
 }
 
+// Normalizador de TemplateId para garantir que caia em um dos 20 templates reais do compilador
+function normalizeTemplateId(input: string | undefined, defaultTemplate: string): MotionTemplateId {
+  if (!input) return (defaultTemplate as MotionTemplateId) || 'hormozi_bold';
+  const clean = input.toLowerCase().trim().replace(/[- ]/g, '_');
+
+  const map: Record<string, MotionTemplateId> = {
+    // 1. Ganchos & Retenção
+    hormozi_bold: 'hormozi_bold',
+    hormozi: 'hormozi_bold',
+    cardfrase: 'hormozi_bold',
+    card_frase: 'hormozi_bold',
+    alerta_urgente: 'alerta_urgente',
+    alerta: 'alerta_urgente',
+    urgent: 'alerta_urgente',
+    pergunta_provocativa: 'pergunta_provocativa',
+    pergunta: 'pergunta_provocativa',
+    question: 'pergunta_provocativa',
+    segredo_revelado: 'segredo_revelado',
+    segredo: 'segredo_revelado',
+    secret: 'segredo_revelado',
+    confidencial: 'segredo_revelado',
+
+    // 2. Notícias & Prova Social
+    news_headline: 'news_headline',
+    newsheadline: 'news_headline',
+    news: 'news_headline',
+    breaking_news: 'news_headline',
+    tweet_card: 'tweet_card',
+    tweetcard: 'tweet_card',
+    tweet: 'tweet_card',
+    twitter: 'tweet_card',
+    x_post: 'tweet_card',
+    chat_simulation: 'chat_simulation',
+    chatsimulation: 'chat_simulation',
+    chat: 'chat_simulation',
+    whatsapp: 'chat_simulation',
+    imessage: 'chat_simulation',
+    quote_autoridade: 'quote_autoridade',
+    quotecard: 'quote_autoridade',
+    quote: 'quote_autoridade',
+
+    // 3. Dados & Métricas
+    stat_counter: 'stat_counter',
+    statcounter: 'stat_counter',
+    counter: 'stat_counter',
+    estatistica: 'stat_counter',
+    grafico_barras: 'grafico_barras',
+    graficobarras: 'grafico_barras',
+    bar_chart: 'grafico_barras',
+    versus_comparison: 'versus_comparison',
+    versuscomparison: 'versus_comparison',
+    versus: 'versus_comparison',
+    comparativo: 'versus_comparison',
+    timeline_progress: 'timeline_progress',
+    timeline: 'timeline_progress',
+
+    // 4. Mídia & B-Roll
+    ken_burns_cinematic: 'ken_burns_cinematic',
+    kenburns: 'ken_burns_cinematic',
+    cinema: 'ken_burns_cinematic',
+    split_collage: 'split_collage',
+    splitcollage: 'split_collage',
+    collage: 'split_collage',
+    collagebroll: 'split_collage',
+    broll_spotlight: 'broll_spotlight',
+    spotlight: 'broll_spotlight',
+    card_frase_impacto: 'card_frase_impacto',
+    mediabroll: 'broll_spotlight',
+
+    // 5. Conversão & CTA
+    cta_pulse: 'cta_pulse',
+    ctabutton: 'cta_pulse',
+    cta: 'cta_pulse',
+    botao: 'cta_pulse',
+    ranking_top3: 'ranking_top3',
+    top3: 'ranking_top3',
+    ranking: 'ranking_top3',
+    lista_passos: 'lista_passos',
+    checklist: 'lista_passos',
+    passos: 'lista_passos',
+    minimal_luxury: 'minimal_luxury',
+    luxury: 'minimal_luxury',
+  };
+
+  return map[clean] || (defaultTemplate as MotionTemplateId) || 'hormozi_bold';
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const {
       prompt = 'Como atrair clientes qualificados todos os dias usando vídeos curtos automáticos',
-      styleMode = 'viral_hormozi',
+      styleMode = 'hormozi_bold',
       aspectRatio = '9:16',
       presetId = 'kinetic_yellow',
       targetDurationSec = 30,
-      targetSceneCount = 6,
+      targetSceneCount = 5,
       voiceId = 'antonio',
     } = body;
 
-    const sceneCount = Math.max(4, Math.min(18, Number(targetSceneCount) || Math.round(Number(targetDurationSec) / 5) || 6));
-
+    const sceneCount = Math.max(4, Math.min(10, Number(targetSceneCount) || 5));
     const apiKey = process.env.GEMINI_API_KEY;
-    let rawScenes: Partial<ScriptScene>[] = [];
+    let rawScenes: any[] = [];
     let generatedTitle = prompt.slice(0, 52);
+    let fullNarrationText = '';
 
+    const chosenTemplate = styleMode || 'hormozi_bold';
+
+    // Prompt de Sistema com Instruções Ricas para a IA (retornar JSON completo preenchido com Motion Graphics específicos)
     const systemInstruction = `
-Você é uma equipe de Diretores de Motion Graphics e Roteiristas Virais para Vídeos Curtos (Reels, TikTok, Shorts).
-O usuário quer criar um vídeo sobre: "${prompt}".
-Duração total alvo: ~${targetDurationSec} segundos.
-Quantidade exata de cenas: ${sceneCount} cenas.
+Você é uma equipe de Diretores de Cinema, Motion Designers e Roteiristas Virais Especializados em Vídeos Curtos (TikTok, Shorts, Reels).
+O tema do vídeo é: "${prompt}".
+O estilo/template principal escolhido pelo usuário é: "${chosenTemplate}".
+Duração alvo: ~${targetDurationSec} segundos.
+Quantidade de cenas: exatamente ${sceneCount} cenas.
 
-Você DEVE alternar entre a biblioteca de 12 componentes HyperFrame:
-1. "Object3DShowcase": Objeto 3D real renderizado em WebGL (object3d: 'coin' | 'diamond' | 'shield' | 'cube', title: 'VALOR AGREGADO', subtitle: 'Ativo digital em ascensão').
-2. "CollageBroll": Colagem estilizada e dinâmica de 3 B-Rolls recortados com movimento Parallax Ken Burns (badge: 'CASO REAL', headline: 'IMPACTO VISUAL').
-3. "CardFrase": Headline curta em caixa alta com highlightWords e badge.
-4. "StatCounter": Número de impacto gigante com suffix ("%" ou "x") e label explicativo.
-5. "TweetCard": Simulação de post viral no X / Twitter (authorName, authorHandle, tweetText).
-6. "NewsHeadline": Manchete urgente de jornal (portalName: 'THE WALL STREET JOURNAL', headline em caixa alta).
-7. "ChatSimulation": Conversa simulada (contactName, senderText, replyText).
-8. "VersusComparison": Comparativo lado a lado (leftTitle: 'O JEITO COMUM', rightTitle: 'COM A NOSSA SOLUÇÃO').
-9. "QuoteCard": Citação marcante de autoridade (quoteText, authorName, authorRole).
-10. "GraficoBarras": Ranking ou comparativo numérico (title, bars: [{label, value, formatted}]).
-11. "GraficoPizza": Distribuição percentual (title, slices: [{label, value, color}]).
-12. "CTAButton": Obrigatoriamente na última cena como chamada para ação direta.
+DIRETRIZES FUNDAMENTAIS DE ROTEIRO & MOTION:
+1. NARRAÇÃO UNIFICADA E CONTÍNUA ("fullNarration"):
+   - Crie uma locução fluida, magnética e humana do início ao fim em português (pt-BR).
+   - Sem interrupções mecânicas ou cortes artificiais. Ritmo estilo Alex Hormozi / Vox / MagnatesMedia.
+2. CENAS VISUAIS ESPECÍFICAS ("scenes"):
+   - Para cada cena, defina o "templateId" ideal selecionando da lista abaixo. Varie com inteligência entre ganchos, prova, dados numéricos e CTA final:
+     * "hormozi_bold": Tipografia gigante amarela neon, foco em palavras de choque.
+     * "alerta_urgente": Badge vermelho piscante de emergência ou notícia crítica.
+     * "pergunta_provocativa": Ponto de interrogação elástico roxo com gancho de reflexão.
+     * "segredo_revelado": Tarja preta de censura que é destravada para revelar verdade oculta.
+     * "news_headline": Manchete de telejornal investigativo (portalName, headline, badge).
+     * "tweet_card": Post viral no X/Twitter com selo de verificado e métricas (authorName, authorHandle, tweetText).
+     * "chat_simulation": Conversa de WhatsApp/iMessage contando um bastidor chocante.
+     * "quote_autoridade": Citação elegante de autoridade com aspas douradas.
+     * "stat_counter": Número gigante animado com contagem (statValue: "84%", statLabel, subText).
+     * "grafico_barras": Gráfico comparativo de barras verticais (title, barsData: [{label, value, displayValue}]).
+     * "versus_comparison": Comparativo lado a lado (versusData: {leftTitle, leftItems: [], rightTitle, rightItems: []}).
+     * "timeline_progress": Linha do tempo ou passo a passo progressivo (stepsData: ["Passo 1", "Passo 2", "Passo 3"]).
+     * "split_collage": Duas imagens em movimento dinâmico com vinheta.
+     * "ranking_top3": Pódio de melhores soluções #1, #2, #3.
+     * "cta_pulse": Obrigatoriamente na última cena com botão animado de chamada para ação.
 
-Crie exatamente ${sceneCount} cenas no seguinte formato JSON puro:
+3. PROMPT VISUAL HIPER-DETALHADO ("visualPrompt"):
+   - O campo "visualPrompt" NÃO DEVE SER GENÉRICO! Ele deve ser um roteiro técnico visual minucioso explicando exatamente o que o motor de renderização construirá nesta cena:
+     * Disposição dos elementos e posicionamento espacial no Canvas (posição de cards, badges, textos e gráficos).
+     * Efeitos visuais, iluminação volumétrica, sombras e vinhetas (ex: "fundo escuro profundo com glow neon ciano e vinheta 4K").
+     * Animações exatas de entrada e saída (ex: "entrada elástica com mola back.out(1.8) e zoom-in contínuo na câmera").
+     * Transições entre cenas (ex: "transição com flash branco e corte cinético de alta retenção").
+     * Movimentos secundários contínuos (ex: "flutuação contínua de partículas e oscilação suave do card central").
+
+4. CAMPOS OBRIGATÓRIOS NO JSON DE CADA CENA:
+   - "summary": Resumo limpo em 1 frase direta da narrativa da cena.
+   - "visualPrompt": Descrição técnica e artística minuciosa da composição gráfica (mínimo 2 a 3 frases densas com posições, cores, efeitos, animações GSAP e transições).
+   - "text": O trecho falado correspondente nesta cena.
+   - "templateId": O ID exato do template motion acima.
+   - "tag": Badge curta em caixa alta (ex: "ALERTA", "DADO REAL", "SEGREDO").
+   - "headline": Título curto de até 5 palavras em caixa alta de alto impacto visual.
+   - "subText": Linha de apoio descritiva.
+   - "highlightWord": A palavra mais importante para o brilho neon.
+   - "statValue": Valor com % ou x (caso use stat_counter).
+   - "statLabel": Rótulo explicativo da estatística.
+   - "barsData": Array de barras (se for grafico_barras).
+   - "versusData": Objeto com leftTitle, leftItems, rightTitle, rightItems (se for versus_comparison).
+   - "authorName" e "authorHandle" (se for tweet_card).
+   - "ctaText": Texto chamativo do botão final (se for cta_pulse).
+
+RETORNE APENAS JSON PURO NO SEGUINTE FORMATO:
 {
-  "title": "Título do Vídeo",
+  "title": "Título Curto do Vídeo",
+  "fullNarration": "Texto corrido integral da locução do início ao fim...",
   "scenes": [
     {
-      "text": "Frase falada pelo narrador em português com ritmo humano e persuasivo.",
-      "componentType": "NewsHeadline",
-      "sfxType": "impact",
-      "cameraMotion": "zoom_in",
-      "transition": "flash_zoom",
-      "visualNotes": "Entrada rápida com flash branco e manchete com destaque neon.",
-      "componentProps": {
-        "portalName": "THE WALL STREET JOURNAL",
-        "headline": "NOTÍCIA EXPLOSIVA DO SETOR",
-        "badge": "URGENTE"
-      }
+      "summary": "Resumo da cena",
+      "visualPrompt": "Composição central com card flutuante em glassmorphism translúcido, posicionado a 45% do topo do Canvas 9:16. Iluminação volumétrica neon amarela pulsando no fundo com vinheta escura profunda. Entrada do elemento central com impacto elástico em escala de 0.8 para 1.0 com mola GSAP, acompanhado de flash branco e efeito de som whoosh. Câmera executa zoom-in contínuo de 1.15x durante os 4.5 segundos da cena, com partículas luminosas flutuando em segundo plano.",
+      "text": "Frase falada",
+      "templateId": "news_headline",
+      "tag": "EXCLUSIVO",
+      "headline": "MUDANÇA RADICAL NO MERCADO",
+      "subText": "Relatório revela a virada nos negócios digitais",
+      "highlightWord": "RADICAL",
+      "statValue": "90%",
+      "statLabel": "dos criadores já migraram"
     }
   ]
 }
@@ -99,26 +223,30 @@ Crie exatamente ${sceneCount} cenas no seguinte formato JSON puro:
           .trim();
 
         const parsed = JSON.parse(responseText);
-        if (parsed?.scenes && Array.isArray(parsed.scenes)) {
+        if (parsed?.scenes && Array.isArray(parsed.scenes) && parsed.scenes.length > 0) {
           rawScenes = parsed.scenes;
           if (parsed.title) generatedTitle = parsed.title;
+          if (parsed.fullNarration) fullNarrationText = parsed.fullNarration;
         }
       } catch (aiErr) {
-        console.warn('Gemini fallback to Pollinations OpenAI:', aiErr);
+        console.warn('Gemini error/fallback:', aiErr);
       }
     }
 
-    // 2. Tenta Pollinations OpenAI JSON se não tiver Gemini
+    // 2. Tenta Pollinations OpenAI API se não houver Gemini configurado (com timeout estrito de 8.5s)
     if (rawScenes.length === 0) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8500);
       try {
         const aiRes = await fetch('https://text.pollinations.ai/openai', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
           body: JSON.stringify({
             model: 'openai',
             messages: [
               { role: 'system', content: systemInstruction },
-              { role: 'user', content: `Tema: "${prompt}"` },
+              { role: 'user', content: `Tema: "${prompt}". Estilo: "${chosenTemplate}".` },
             ],
             response_format: { type: 'json_object' },
             temperature: 0.7,
@@ -127,43 +255,79 @@ Crie exatamente ${sceneCount} cenas no seguinte formato JSON puro:
 
         if (aiRes.ok) {
           const aiData = await aiRes.json();
-          const parsed = JSON.parse(aiData.choices?.[0]?.message?.content || '{}');
+          const cleanJson = aiData.choices?.[0]?.message?.content?.replace(/```json/gi, '')?.replace(/```/g, '')?.trim();
+          const parsed = JSON.parse(cleanJson || '{}');
           if (parsed?.scenes && Array.isArray(parsed.scenes) && parsed.scenes.length > 0) {
             rawScenes = parsed.scenes;
             if (parsed.title) generatedTitle = parsed.title;
+            if (parsed.fullNarration) fullNarrationText = parsed.fullNarration;
           }
         }
       } catch (pollErr) {
-        console.warn('Pollinations error:', pollErr);
+        console.warn('Pollinations OpenAI fallback failed/timeout:', pollErr);
+      } finally {
+        clearTimeout(timeoutId);
       }
     }
 
-    // 3. Fallback Dinâmico Estruturado
+    // 3. Fallback Dinâmico Inteligente e Totalmente Customizado pelo Tema e pelo Template
     if (rawScenes.length === 0) {
-      rawScenes = buildDynamicHyperframeScenes(prompt, styleMode, sceneCount);
+      rawScenes = buildDynamicHyperframeScenes(prompt, chosenTemplate, sceneCount);
     }
 
     const sfxOptions: SfxType[] = ['impact', 'whoosh', 'pop', 'cash', 'cinematic_boom', 'glitch', 'rise'];
     const camOptions: CameraMotionType[] = ['zoom_in', 'float_3d', 'pan_right', 'zoom_out', 'pan_left'];
     const transOptions: TransitionType[] = ['flash_zoom', 'spring_slide', 'glitch_cut', 'fade'];
 
+    // Garante que a narração unificada contínua exista
+    if (!fullNarrationText) {
+      fullNarrationText = rawScenes.map((s) => s.text).filter(Boolean).join(' ');
+    }
+
+    const fullAudioUrl = `/api/tts?text=${encodeURIComponent(fullNarrationText.slice(0, 1500))}&voice=${encodeURIComponent(voiceId)}`;
+
+    // Enriquece cada cena ligando com os dados do template, componente visual e b-rolls
     const enrichedScenes: ScriptScene[] = rawScenes.map((sc, idx) => {
-      const cleanText = sc.text || 'Descubra como transformar seus resultados hoje mesmo.';
+      const cleanText = sc.text || 'Descubra como transformar seus resultados hoje mesmo com automação.';
       const durationSec = estimateSpeechDuration(cleanText);
       const curatedMedia = getContextualMediaForScene(cleanText, prompt, idx);
       const broll = selectContextualBroll(`${prompt} ${cleanText}`, idx);
       const finalImage = curatedMedia || broll.imageUrl;
 
+      const templateResolved = normalizeTemplateId(sc.templateId || sc.componentType, chosenTemplate);
+
       return {
         id: `scene-${idx + 1}-${Date.now()}`,
         sceneIndex: idx,
+        summary: sc.summary || `Cena #${idx + 1}: ${cleanText.slice(0, 50)}...`,
+        visualPrompt:
+          sc.visualPrompt ||
+          `Animação com layout "${templateResolved}", tipografia cinética sincronizada e iluminação contrastante.`,
         text: cleanText,
         durationSec,
-        componentType: sc.componentType || 'CardFrase',
+        templateId: templateResolved,
+        componentType: templateResolved,
         componentProps: {
-          ...sc.componentProps,
-          imageUrl: sc.componentProps?.imageUrl || finalImage,
-          images: sc.componentProps?.images || [finalImage, finalImage],
+          badge: sc.tag || sc.componentProps?.badge || 'RETENÇÃO',
+          headline: sc.headline || sc.componentProps?.headline || cleanText.slice(0, 42).toUpperCase(),
+          subtext: sc.subText || sc.componentProps?.subtext || '',
+          highlightWords: [sc.highlightWord || sc.componentProps?.highlightWords?.[0] || 'DESTAQUE'],
+          number: parseInt(String(sc.statValue || sc.componentProps?.number || '84').replace(/\D/g, ''), 10) || 84,
+          suffix: String(sc.statValue || sc.componentProps?.suffix || '%').replace(/[0-9]/g, '') || '%',
+          label: sc.statLabel || sc.componentProps?.label || 'Taxa de Retenção',
+          bars: sc.barsData || sc.componentProps?.bars || [
+            { label: 'Método Manual', value: 24, displayValue: '24%' },
+            { label: 'Com HyperFrame', value: 92, displayValue: '92%' },
+          ],
+          leftTitle: sc.versusData?.leftTitle || sc.componentProps?.leftTitle || 'O MÉTODO ANTIGO',
+          leftDesc: sc.versusData?.leftItems?.[0] || sc.componentProps?.leftDesc || 'Lento, manual e sem retenção',
+          rightTitle: sc.versusData?.rightTitle || sc.componentProps?.rightTitle || 'COM NOSSA SOLUÇÃO',
+          rightDesc: sc.versusData?.rightItems?.[0] || sc.componentProps?.rightDesc || '100% automático e cinematográfico',
+          authorName: sc.authorName || sc.componentProps?.authorName || 'Estrategista Viral',
+          authorHandle: sc.authorHandle || sc.componentProps?.authorHandle || '@growth_insider',
+          buttonText: sc.ctaText || sc.componentProps?.buttonText || 'Quero Começar Agora',
+          imageUrl: finalImage,
+          images: [finalImage, finalImage],
         },
         audioUrl: `/api/tts?text=${encodeURIComponent(cleanText)}&voice=${encodeURIComponent(voiceId)}`,
         brollVideoUrl: broll.videoUrl,
@@ -172,15 +336,7 @@ Crie exatamente ${sceneCount} cenas no seguinte formato JSON puro:
         sfxType: sc.sfxType || sfxOptions[idx % sfxOptions.length],
         cameraMotion: sc.cameraMotion || camOptions[idx % camOptions.length],
         transition: sc.transition || transOptions[idx % transOptions.length],
-        visualNotes:
-          sc.visualNotes ||
-          `Cena #${idx + 1}: Animação Motion Graphics dinâmica ativa.`,
-        hyperframeConfig: {
-          physicsDamping: 14,
-          physicsStiffness: 130,
-          threeJsObject: (sc.componentProps?.object3d as any) || (['coin', 'diamond', 'shield', 'cube'][idx % 4] as any),
-          lightColor: '#38bdf8',
-        },
+        visualNotes: sc.visualPrompt || `Cena #${idx + 1}: Animação do template ${templateResolved} com GSAP 3.`,
         wordTimestamps: buildWordTimestamps(cleanText, durationSec),
       };
     });
@@ -190,6 +346,9 @@ Crie exatamente ${sceneCount} cenas no seguinte formato JSON puro:
       title: generatedTitle,
       presetId,
       aspectRatio,
+      styleMode: chosenTemplate,
+      fullNarration: fullNarrationText,
+      fullAudioUrl,
       scenes: enrichedScenes,
     });
   } catch (error: any) {
@@ -200,177 +359,92 @@ Crie exatamente ${sceneCount} cenas no seguinte formato JSON puro:
   }
 }
 
-function buildDynamicHyperframeScenes(prompt: string, styleMode: string, targetCount = 6): Partial<ScriptScene>[] {
+/**
+ * Fallback Dinâmico Estruturado Baseado no Tema do Usuário e no Template Selecionado
+ */
+function buildDynamicHyperframeScenes(prompt: string, styleMode: string, targetCount = 5): any[] {
   const cleanTopic = prompt.trim().replace(/\.$/, '');
   const words = cleanTopic.split(/\s+/);
   const shortSubject = words.slice(0, 5).join(' ');
 
-  const pool: Partial<ScriptScene>[] = [
-    {
-      text: `Atenção: uma mudança silenciosa acabou de transformar tudo sobre ${shortSubject} no mercado.`,
-      componentType: 'NewsHeadline',
-      sfxType: 'impact',
-      cameraMotion: 'zoom_in',
-      transition: 'flash_zoom',
-      visualNotes: 'Recorte urgente de jornal com zoom dramático e vinheta escura.',
-      componentProps: {
-        portalName: 'THE WALL STREET JOURNAL',
-        headline: `${cleanTopic.toUpperCase().slice(0, 48)}: A VIRADA DO MERCADO`,
-        badge: 'BREAKING NEWS',
-        dateStr: 'Relatório Exclusivo 2026',
-      },
-    },
-    {
-      text: `Veja como os líderes estão acumulando ativos de alto valor enquanto a maioria segue o modelo antigo.`,
-      componentType: 'Object3DShowcase',
-      sfxType: 'cash',
-      cameraMotion: 'float_3d',
-      transition: 'spring_slide',
-      visualNotes: 'Cubo / Moeda 3D em rotação contínua WebGL com brilho de estúdio.',
-      componentProps: {
-        object3d: 'coin',
-        title: 'CRESCIMENTO EXPONENCIAL',
-        subtitle: 'Ativos digitais e tecnologia avançada',
-      },
-    },
-    {
-      text: `Mais de 84% das pessoas que tentam esse método sem a estratégia certa acabam travando.`,
-      componentType: 'StatCounter',
-      sfxType: 'pop',
-      cameraMotion: 'pan_right',
-      transition: 'glitch_cut',
-      visualNotes: 'Contador gigante animando de 0 a 84% com pulso neon.',
-      componentProps: {
-        number: 84,
-        suffix: '%',
-        prefix: '+',
-        label: 'Atenção e Retenção no Formato Vertical',
-        description: 'Dados comprovados do comportamento de consumo',
-      },
-    },
-    {
-      text: `Olhe a diferença brutal entre continuar no processo manual ou automatizar sua produção inteira.`,
-      componentType: 'VersusComparison',
-      sfxType: 'cinematic_boom',
-      cameraMotion: 'zoom_in',
-      transition: 'flash_zoom',
-      visualNotes: 'Split screen comparativo com contraste vermelho vs verde esmeralda.',
-      componentProps: {
-        leftTitle: 'O MÉTODO TRADICIONAL',
-        leftDesc: 'Horas perdidas em edições manuais e custo altíssimo',
-        rightTitle: 'COM NOSSA SOLUÇÃO',
-        rightDesc: 'Vídeo 100% pronto e animado em segundos',
-      },
-    },
-    {
-      text: `As conversas nos bastidores mostram resultados imediatos logo nas primeiras 48 horas de campanha.`,
-      componentType: 'ChatSimulation',
-      sfxType: 'typing',
-      cameraMotion: 'pan_left',
-      transition: 'spring_slide',
-      visualNotes: 'Simulação de mensagens com check azul duplo e pop elástico.',
-      componentProps: {
-        contactName: 'Diretor Comercial',
-        senderText: 'Você viu o CTR do vídeo novo com elementos 3D?',
-        replyText: 'Bateu 4.8x mais retenção que o criativo estático!',
-      },
-    },
-    {
-      text: `O crescimento em ranking supera qualquer formato estático tradicional nas redes sociais.`,
-      componentType: 'GraficoBarras',
-      sfxType: 'rise',
-      cameraMotion: 'zoom_in',
-      transition: 'fade',
-      visualNotes: 'Barras progressivas com preenchimento neon sincronizado.',
-      componentProps: {
-        title: 'TAXA DE RETENÇÃO POR FORMATO',
-        bars: [
-          { label: 'Motion + B-Roll', value: 94, formatted: '94%' },
-          { label: 'Corte Simples', value: 52, formatted: '52%' },
-          { label: 'Post Estático', value: 18, formatted: '18%' },
-        ],
-      },
-    },
-    {
-      text: `A blindagem de autoridade acontece quando seu conteúdo combina estética de cinema com dados claros.`,
-      componentType: 'Object3DShowcase',
-      sfxType: 'impact',
-      cameraMotion: 'float_3d',
-      transition: 'glitch_cut',
-      visualNotes: 'Diamante / Escudo 3D rotacionando em WebGL com reflexo especular.',
-      componentProps: {
-        object3d: 'diamond',
-        title: 'AUTORIDADE PREMIUM',
-        subtitle: 'Posicionamento visual inconfundível',
-      },
-    },
-    {
-      text: `Como já destacavam os maiores estrategistas: quem domina a atenção visual domina todo o mercado.`,
-      componentType: 'QuoteCard',
-      sfxType: 'whoosh',
-      cameraMotion: 'zoom_out',
-      transition: 'fade',
-      visualNotes: 'Card de citação dourado com 5 estrelas e retrato em moldura.',
-      componentProps: {
-        quoteText: 'Quem domina a retenção visual nos primeiros 3 segundos domina o mercado.',
-        authorName: 'Alex Hormozi',
-        authorRole: 'Estrategista de Escala',
-      },
-    },
-    {
-      text: `Veja a repercussão real de quem já transformou ideias em vídeos de alta conversão.`,
-      componentType: 'TweetCard',
-      sfxType: 'pop',
-      cameraMotion: 'float_3d',
-      transition: 'spring_slide',
-      visualNotes: 'Card X/Twitter com selo verificado e inclinação 3D.',
-      componentProps: {
-        authorName: 'Tech Founder',
-        authorHandle: '@founder_ai',
-        tweetText: 'Substituímos 12 horas de After Effects por 60 segundos de geração com IA e Motion Graphics.',
-      },
-    },
-    {
-      text: `A distribuição de resultados comprova onde você deve concentrar sua energia criativa hoje.`,
-      componentType: 'GraficoPizza',
-      sfxType: 'whoosh',
-      cameraMotion: 'zoom_in',
-      transition: 'flash_zoom',
-      visualNotes: 'Gráfico circular animado com legenda lateral.',
-      componentProps: {
-        title: 'IMPACTO NA CONVERSÃO',
-        slices: [
-          { label: 'Gancho Visual Motion', value: 55, color: '#eab308' },
-          { label: 'Ritmo & Sound Design', value: 30, color: '#38bdf8' },
-          { label: 'Copywriting', value: 15, color: '#a855f7' },
-        ],
-      },
-    },
-    {
-      text: `Toque no botão abaixo agora mesmo e comece a produzir seus vídeos com inteligência artificial hoje.`,
-      componentType: 'CTAButton',
-      sfxType: 'rise',
-      cameraMotion: 'zoom_in',
-      transition: 'flash_zoom',
-      visualNotes: 'Botão CTA pulsante com brilho intenso.',
-      componentProps: {
-        buttonText: 'Quero Começar Agora',
-        subcaption: 'Acesso Imediato • Renderização em 60fps',
-        accentColor: '#eab308',
-      },
-    },
-  ];
+  // Mapeia templates recomendados para cada momento da narrativa respeitando a escolha do usuário
+  const scenes: any[] = [];
 
-  if (targetCount <= pool.length) {
-    const selected = pool.slice(0, targetCount - 1);
-    selected.push(pool[pool.length - 1]);
-    return selected;
-  }
+  // Cena 1: Gancho / Hook
+  scenes.push({
+    templateId: styleMode.includes('alerta') ? 'alerta_urgente' : styleMode.includes('pergunta') ? 'pergunta_provocativa' : styleMode.includes('news') ? 'news_headline' : 'hormozi_bold',
+    tag: 'ATENÇÃO',
+    headline: `${cleanTopic.toUpperCase().slice(0, 42)}`,
+    subText: 'A virada que os maiores líderes já aplicam em segredo',
+    highlightWord: 'VIRADA',
+    text: `Preste muita atenção: uma virada silenciosa acabou de transformar tudo sobre ${shortSubject} no mercado.`,
+    summary: 'Gancho magnético de retenção alertando sobre a transformação do mercado.',
+    visualPrompt: `Composição central de choque com tipografia cinética pesada na cor de destaque neon, alinhada a 48% do topo do Canvas 9:16. Fundo com vinheta escura profunda e glow volumétrico pulsando. O card central entra com mola elástica GSAP back.out(1.8) no segundo 0.1s, acompanhado de flash branco e movimento contínuo Ken Burns de 1.15x de zoom durante a cena.`,
+  });
 
-  const extended: Partial<ScriptScene>[] = [];
-  for (let i = 0; i < targetCount - 1; i++) {
-    extended.push(pool[i % (pool.length - 1)]);
-  }
-  extended.push(pool[pool.length - 1]);
-  return extended;
+  // Cena 2: O Problema Oculto ou Estatística Chocante
+  scenes.push({
+    templateId: 'stat_counter',
+    tag: 'DADO CHOCANTE',
+    headline: 'RETENÇÃO EM QUEDA LIVRE',
+    subText: 'Dados comprovados do comportamento de consumo digital',
+    highlightWord: '89%',
+    statValue: '89%',
+    statLabel: 'perdem clientes por formato estático',
+    text: `Mais de 89 por cento das pessoas simplesmente ignoram formatos estáticos e lentos logo nos primeiros segundos.`,
+    summary: 'Apresentação de métrica de perda para quem ainda insiste em modelos ultrapassados.',
+    visualPrompt: `Contador radial vetorial SVG gigante posicionado no centro do Canvas 9:16. O anel externo preenche progressivamente de 0 a 691px enquanto o número central roda de 0 a 89% com desaceleração power3.out em 1.4s. Partículas cianas flutuam no fundo sobreposto por grade técnica de baixa opacidade e som de pop sincronizado.`,
+  });
+
+  // Cena 3: O Comparativo de Solução (Versus ou Gráfico)
+  scenes.push({
+    templateId: styleMode.includes('grafico') ? 'grafico_barras' : 'versus_comparison',
+    tag: 'COMPARAÇÃO',
+    headline: 'O MÉTODO TRADICIONAL VS NOVO',
+    subText: 'Comparativo definitivo de produtividade e velocidade',
+    highlightWord: 'ESCALA',
+    versusData: {
+      leftTitle: 'O JEITO ANTIGO',
+      leftItems: ['Horas em edições manuais', 'Baixíssima retenção', 'Custo elevado'],
+      rightTitle: 'COM IA & MOTION',
+      rightItems: ['Vídeos prontos em segundos', 'Retenção e engajamento 4x maior', 'Escala automática'],
+    },
+    barsData: [
+      { label: 'Post Estático', value: 18, displayValue: '18%' },
+      { label: 'Corte Simples', value: 45, displayValue: '45%' },
+      { label: 'Motion Dinâmico', value: 96, displayValue: '96%' },
+    ],
+    text: `Enquanto o método comum consome horas em edições manuais, o novo sistema gera retenção e movimento em segundos.`,
+    summary: 'Divisão de contraste provando a superioridade da automação inteligente.',
+    visualPrompt: `Split-screen comparativo com dois cards flutuantes translúcidos em lados opostos: à esquerda entra o painel do método antigo com borda vermelha e ícones de erro deslizando de -120px; à direita entra o painel da nova solução com borda neon e gradiente azul esmeralda. No centro, o badge de 'VS' surge rotacionando a 180 graus com impacto sonoro cinematográfico.`,
+  });
+
+  // Cena 4: Prova Social ou Segredo Revelado
+  scenes.push({
+    templateId: styleMode.includes('tweet') ? 'tweet_card' : styleMode.includes('chat') ? 'chat_simulation' : 'segredo_revelado',
+    tag: 'BASTIDORES',
+    headline: 'O CÓDIGO DA VIRALIZAÇÃO',
+    subText: 'Como os canais de maior engajamento estruturam cada segundo',
+    highlightWord: 'RESULTADO',
+    authorName: 'Especialista em Escala',
+    authorHandle: '@insider_growth',
+    text: `Os bastidores mostram que o segredo não é ter equipamentos caros, mas sim ritmo visual cinematográfico.`,
+    summary: 'Revelação de autoridade e quebra de objeção do espectador.',
+    visualPrompt: `Card de arquivo confidencial estilo dossiê com carimbo vermelho inclinado carimbando a 2.5x de escala no segundo 0.3s. A tarja preta de censura sobre a frase de maior impacto desliza lateralmente revelando o texto oculto com efeito sonoro de glitch digital e iluminação âmbar volumétrica ao fundo.`,
+  });
+
+  // Cena 5: Chamada para Ação Final (CTA)
+  scenes.push({
+    templateId: 'cta_pulse',
+    tag: 'COMECE AGORA',
+    headline: 'DESTRAVE SEU ACESSO HOJE',
+    subText: 'Produza seus primeiros vídeos de alta retenção agora',
+    highlightWord: 'AGORA',
+    ctaText: 'Quero Começar Agora Mesmo',
+    text: `Clique no botão agora mesmo e transforme suas ideias em vídeos virais prontos para publicar.`,
+    summary: 'Chamada para ação direta com botão pulsante e clique simulado.',
+    visualPrompt: `Botão 3D de alta conversão posicionado na parte inferior central do Canvas 9:16 com gradiente vibrante e sombra iluminada de 50px de raio. Um cursor de mouse realista entra diagonalmente no segundo 0.5s, posiciona-se sobre o botão e executa clique com compressão física de escala para 0.93 e retorno com mola elástica, enquanto um orbe de luz neon pulsa continuamente atrás do elemento.`,
+  });
+
+  return scenes.slice(0, targetCount);
 }

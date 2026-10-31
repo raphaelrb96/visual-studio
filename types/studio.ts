@@ -37,6 +37,10 @@ export interface ScriptScene {
   sceneIndex: number;
   text: string;
   durationSec: number;
+  summary?: string;
+  visualPrompt?: string;
+  compiledCustomHtml?: string;
+  compiledGsapScript?: string;
   componentType?: string;
   componentProps?: Record<string, any>;
   audioUrl?: string;
@@ -57,6 +61,8 @@ export interface VideoProject {
   title: string;
   currentStep?: ProjectStep;
   prompt?: string;
+  fullNarration?: string;
+  fullAudioUrl?: string;
   videoType?: VideoType;
   aspectRatio: AspectRatio;
   presetId?: string;

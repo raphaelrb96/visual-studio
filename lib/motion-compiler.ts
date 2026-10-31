@@ -48,6 +48,8 @@ export interface MasterCompositionConfig {
   title: string;
   aspectRatio: '9:16' | '16:9' | '1:1';
   aestheticId?: string;
+  fullNarration?: string;
+  fullAudioUrl?: string;
   scenes: CompiledSceneData[];
 }
 
@@ -80,6 +82,15 @@ export function computeWordTimestamps(text: string, durationSec: number): WordTi
  * Gera o Centerpiece HTML/SVG específico para cada um dos 20 Modelos de Motion
  */
 function renderSceneCenterpieceHtml(sc: CompiledSceneData, idx: number, highlightColor: string): string {
+  // Se a IA gerou HTML customizado para essa cena baseado no prompt detalhado, prioriza a renderização direta em tela cheia (sem card estático padronizado)
+  if (sc.compiledCustomHtml && sc.compiledCustomHtml.trim().length > 10) {
+    return `
+      <div class="ai-full-stage" id="cp-${idx}">
+        ${sc.compiledCustomHtml}
+      </div>
+    `;
+  }
+
   const tpl = sc.templateId || 'hormozi_bold';
   const headline = escapeHtml(sc.headline || sc.text.slice(0, 48).toUpperCase());
   const subText = escapeHtml(sc.subText || '');
@@ -362,8 +373,12 @@ export function buildMasterVideoHtml(config: MasterCompositionConfig): string {
         }
       }
 
+      const centerpieceHtml = sc.compiledCustomHtml && sc.compiledCustomHtml.trim().length > 10
+        ? `<div class="ai-stage-fullscreen" id="cp-${sc.idx}">${sc.compiledCustomHtml}</div>`
+        : `<div class="stage-center"><div class="centerpiece" id="cp-${sc.idx}">${centerpiece}</div></div>`;
+
       return `
-      <section class="scene-clip clip" id="scene-${sc.idx}" data-index="${sc.idx}" data-start="${sc.startSec}" data-duration="${sc.durationSec}">
+      <section class="scene-clip clip" id="scene-${sc.idx}" data-index="${sc.idx}" data-start="${sc.startSec}" data-duration="${sc.durationSec}" style="${sc.idx === 0 ? 'opacity:1;visibility:inherit;z-index:10;' : ''}">
         <!-- Camada 0: B-Roll Cinematográfico com Movimento Contínuo (Ken Burns Dinâmico) -->
         <div class="broll-container" id="broll-${sc.idx}">
           <img class="broll-img" id="broll-img-${sc.idx}" src="${escapeHtml(sc.brollUrl || '')}" alt="" crossorigin="anonymous" onerror="this.style.opacity='0'" />
@@ -375,7 +390,7 @@ export function buildMasterVideoHtml(config: MasterCompositionConfig): string {
 
         ${
           sc.audioUrl
-            ? `<audio src="${escapeHtml(sc.audioUrl)}" data-start="${sc.startSec}" data-duration="${sc.durationSec}" data-volume="1"></audio>`
+            ? `<audio src="${escapeHtml(sc.audioUrl)}" data-start="${sc.startSec}" data-duration="${sc.durationSec}" data-volume="1" preload="auto"></audio>`
             : ''
         }
 
@@ -388,10 +403,8 @@ export function buildMasterVideoHtml(config: MasterCompositionConfig): string {
           <div class="hud-counter">CENA 0${sc.idx + 1} // ${sc.durationSec.toFixed(1)}S</div>
         </div>
 
-        <!-- Camada 2: Centerpiece Motion Graphics -->
-        <div class="stage-center">
-          ${centerpiece}
-        </div>
+        <!-- Camada 2: Palco Visual (IA Custom Canvas ou Centerpiece Dinâmico) -->
+        ${centerpieceHtml}
 
         <!-- Camada 3: Legendas Cinéticas Pop Word-by-Word (Karaoke Hormozi Ultra-Visível) -->
         <div class="captions-zone" id="cap-zone-${sc.idx}">
@@ -498,17 +511,26 @@ export function buildMasterVideoHtml(config: MasterCompositionConfig): string {
       );
 
       // 3. Centerpiece Entry com Impacto 3D
-      masterTl.fromTo("#cp-${idx}",
-        { scale: 0.82, y: 70, rotationX: 18, autoAlpha: 0 },
-        { scale: 1, y: 0, rotationX: 0, autoAlpha: 1, duration: 0.55, ease: "back.out(1.5)" },
-        ${s + 0.1}
-      );
+      if (!sc.compiledCustomHtml) {
+        masterTl.fromTo("#cp-${idx}",
+          { scale: 0.82, y: 70, rotationX: 18, autoAlpha: 0 },
+          { scale: 1, y: 0, rotationX: 0, autoAlpha: 1, duration: 0.55, ease: "back.out(1.5)" },
+          ${s + 0.1}
+        );
 
-      // Movimento secundário contínuo no Centerpiece (Flutuação suave para eliminar efeito estático)
-      masterTl.to("#cp-${idx}",
-        { y: -12, duration: ${d * 0.5}, ease: "sine.inOut", yoyo: true, repeat: 1 },
-        ${s + 0.65}
-      );
+        // Movimento secundário contínuo no Centerpiece (Flutuação suave para eliminar efeito estático)
+        masterTl.to("#cp-${idx}",
+          { y: -12, duration: ${d * 0.5}, ease: "sine.inOut", yoyo: true, repeat: 1 },
+          ${s + 0.65}
+        );
+      } else {
+        masterTl.set("#cp-${idx}", { autoAlpha: 1, display: "flex" }, ${s});
+        masterTl.fromTo("#cp-${idx}",
+          { scale: 0.94, autoAlpha: 0 },
+          { scale: 1, autoAlpha: 1, duration: 0.45, ease: "power2.out" },
+          ${s}
+        );
+      }
 
       // 4. Barra de Progresso
       masterTl.fromTo("#prog-${idx}",
@@ -569,7 +591,15 @@ export function buildMasterVideoHtml(config: MasterCompositionConfig): string {
         masterTl.to("#cta-btn-${idx}", { scale: 1.06, duration: 0.25, ease: "elastic.out(1.2, 0.4)" }, ${s + 1.37});
       }
 
-      ${sc.compiledGsapScript || ''}
+      try {
+        ${
+          sc.compiledGsapScript
+            ? sc.compiledGsapScript.replace(/START_SEC/g, String(s))
+            : ''
+        }
+      } catch (err) {
+        console.warn("GSAP custom scene warning:", err);
+      }
 
       ${
         idx < sceneTimings.length - 1
@@ -685,7 +715,29 @@ export function buildMasterVideoHtml(config: MasterCompositionConfig): string {
       display: flex;
       align-items: center;
       justify-content: center;
-      margin: 40px 0;
+      margin: 24px 0;
+    }
+    .ai-stage-fullscreen {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 60px 50px 200px;
+      pointer-events: none;
+    }
+    .ai-full-stage {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
     }
     .centerpiece {
       width: 100%;
@@ -869,42 +921,127 @@ export function buildMasterVideoHtml(config: MasterCompositionConfig): string {
 </head>
 <body>
   <div id="root" data-composition-id="root" data-start="0" data-width="${width}" data-height="${height}" data-duration="${totalDuration}">
+    ${config.fullAudioUrl ? `<audio id="master-narration-audio" src="${escapeHtml(config.fullAudioUrl)}" preload="auto" style="display:none"></audio>` : ''}
     ${scenesDom}
   </div>
 
   <script>
     window.__timelines = window.__timelines || {};
-    const masterTl = gsap.timeline({ paused: true });
-    ${gsapSceneScripts}
-
-    window.__timelines.root = masterTl;
-
+    const masterAudio = document.getElementById('master-narration-audio');
+    const sceneAudios = Array.from(document.querySelectorAll('.scene-clip audio'));
     const statNumbers = Array.from(document.querySelectorAll('[id^="stat-num-"]'));
 
-    function seekToTime(t) {
-      const clamped = Math.max(0, Math.min(${totalDuration}, Number(t) || 0));
-      masterTl.time(clamped);
-
-      // Atualiza contadores numéricos proporcionalmente ao tempo da cena
+    function syncCounters(currentTime) {
       statNumbers.forEach((el) => {
         const sceneEl = el.closest('.scene-clip');
         if (!sceneEl) return;
         const st = parseFloat(sceneEl.getAttribute('data-start') || '0');
         const target = parseInt(el.getAttribute('data-target') || '90', 10);
         const suffix = el.getAttribute('data-suffix') || '%';
-        const localT = Math.max(0, clamped - st);
-        const prog = Math.min(1, localT / 1.3);
+        const localT = Math.max(0, currentTime - st);
+        const prog = Math.min(1, localT / 1.35);
         const currentVal = Math.round(target * (1 - Math.pow(1 - prog, 3)));
         el.textContent = currentVal + suffix;
       });
     }
 
+    function syncAudioPlayback(currentTime, isPlaying) {
+      if (masterAudio && masterAudio.src) {
+        try {
+          if (Math.abs(masterAudio.currentTime - currentTime) > 0.3) {
+            masterAudio.currentTime = currentTime;
+          }
+          if (isPlaying && masterAudio.paused) {
+            masterAudio.play().catch(() => {});
+          } else if (!isPlaying && !masterAudio.paused) {
+            masterAudio.pause();
+          }
+        } catch (e) {}
+      }
+
+      // Sincroniza áudio de cada cena caso não haja masterAudio
+      if (!masterAudio || !masterAudio.src) {
+        sceneAudios.forEach((aud) => {
+          try {
+            const start = parseFloat(aud.getAttribute('data-start') || '0');
+            const dur = parseFloat(aud.getAttribute('data-duration') || '4');
+            const end = start + dur;
+            if (currentTime >= start && currentTime < end) {
+              const localT = currentTime - start;
+              if (Math.abs(aud.currentTime - localT) > 0.3) {
+                aud.currentTime = localT;
+              }
+              if (isPlaying && aud.paused) {
+                aud.play().catch(() => {});
+              } else if (!isPlaying && !aud.paused) {
+                aud.pause();
+              }
+            } else {
+              if (!aud.paused) aud.pause();
+            }
+          } catch (e) {}
+        });
+      }
+    }
+
+    const masterTl = gsap.timeline({
+      paused: true,
+      onUpdate: function () {
+        const t = this.time();
+        syncCounters(t);
+        syncAudioPlayback(t, !this.paused());
+        try {
+          window.parent.postMessage({ type: 'HYPERFRAME_TIME_UPDATE', currentTime: t }, '*');
+        } catch (e) {}
+      },
+      onComplete: function () {
+        syncAudioPlayback(this.duration(), false);
+        try {
+          window.parent.postMessage({ type: 'HYPERFRAME_PLAYBACK_ENDED' }, '*');
+        } catch (e) {}
+      }
+    });
+    ${gsapSceneScripts}
+
+    window.__timelines.root = masterTl;
+
+    function seekToTime(t) {
+      const clamped = Math.max(0, Math.min(${totalDuration}, Number(t) || 0));
+      masterTl.time(clamped);
+      syncCounters(clamped);
+      syncAudioPlayback(clamped, !masterTl.paused());
+    }
+
+    function playVideo() {
+      if (masterTl.time() >= ${totalDuration} - 0.05) {
+        masterTl.time(0);
+      }
+      masterTl.play();
+      syncAudioPlayback(masterTl.time(), true);
+    }
+
+    function pauseVideo() {
+      masterTl.pause();
+      syncAudioPlayback(masterTl.time(), false);
+    }
+
     window.seekToTime = seekToTime;
+    window.playVideo = playVideo;
+    window.pauseVideo = pauseVideo;
     seekToTime(0);
 
     window.addEventListener('message', (event) => {
-      if (event.data && event.data.type === 'SEEK_VIDEO') {
+      if (!event.data) return;
+      if (event.data.type === 'SEEK_VIDEO') {
         seekToTime(event.data.time);
+      } else if (event.data.type === 'PLAY_VIDEO') {
+        playVideo();
+      } else if (event.data.type === 'PAUSE_VIDEO') {
+        pauseVideo();
+      } else if (event.data.type === 'SET_VOLUME') {
+        const vol = Math.max(0, Math.min(1, Number(event.data.volume) || 1));
+        if (masterAudio) masterAudio.volume = vol;
+        sceneAudios.forEach((a) => { a.volume = vol; });
       }
     });
   </script>

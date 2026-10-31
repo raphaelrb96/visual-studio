@@ -6,6 +6,7 @@ import {
   RenderJob,
   JobStatus 
 } from '@/types/studio';
+import { TimelineElement } from '@/types/timeline-elements';
 import { DEFAULT_STYLE_PRESETS } from '@/lib/presets';
 
 interface StudioState {
@@ -14,17 +15,22 @@ interface StudioState {
   currentTime: number;
   currentSceneIndex: number;
   selectedSceneId: string | null;
+  selectedElementId: string | null;
+  selectedElementType: string | null;
   playbackSpeed: number;
   currentJob: RenderJob | null;
 
   setPreset: (presetId: string) => void;
   setAspectRatio: (ratio: AspectRatio) => void;
+  setFullNarration: (narration: string, audioUrl?: string) => void;
   setScenes: (scenes: ScriptScene[]) => void;
   updateScene: (sceneId: string, updates: Partial<ScriptScene>) => void;
   addScene: (afterIndex?: number) => void;
   removeScene: (sceneId: string) => void;
   reorderScenes: (startIndex: number, endIndex: number) => void;
   selectScene: (sceneId: string | null) => void;
+  selectElement: (elementId: string | null, elementType?: string | null) => void;
+  updateElementProps: (elementId: string, updates: Record<string, any>) => void;
   setCurrentTime: (time: number) => void;
   setIsPlaying: (isPlaying: boolean) => void;
   togglePlay: () => void;
@@ -131,6 +137,8 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   currentTime: 0,
   currentSceneIndex: 0,
   selectedSceneId: DEFAULT_SCENES[0].id,
+  selectedElementId: `3d-${DEFAULT_SCENES[0].id}`,
+  selectedElementType: 'motion',
   playbackSpeed: 1.0,
   currentJob: null,
 
@@ -151,6 +159,16 @@ export const useStudioStore = create<StudioState>((set, get) => ({
         ...state.manifest,
         aspectRatio,
         resolution,
+      },
+    }));
+  },
+
+  setFullNarration: (fullNarration: string, fullAudioUrl?: string) => {
+    set((state) => ({
+      manifest: {
+        ...state.manifest,
+        fullNarration,
+        ...(fullAudioUrl ? { fullAudioUrl } : {}),
       },
     }));
   },
@@ -233,6 +251,36 @@ export const useStudioStore = create<StudioState>((set, get) => ({
 
   selectScene: (sceneId: string | null) => {
     set({ selectedSceneId: sceneId });
+  },
+
+  selectElement: (elementId: string | null, elementType: string | null = null) => {
+    set({
+      selectedElementId: elementId,
+      selectedElementType: elementType,
+      // Se o elemento pertencer a uma cena específica, seleciona a cena para contexto mas mantém foco no elemento
+      selectedSceneId: elementId ? elementId.replace(/^(3d|broll|sub|aud)-/, '') : null,
+    });
+  },
+
+  updateElementProps: (elementId: string, updates: Record<string, any>) => {
+    const { manifest } = get();
+    const sceneId = elementId.replace(/^(3d|broll|sub|aud)-/, '');
+    set({
+      manifest: {
+        ...manifest,
+        scenes: manifest.scenes.map((sc) => {
+          if (sc.id !== sceneId) return sc;
+          return {
+            ...sc,
+            ...updates,
+            componentProps: {
+              ...(sc.componentProps || {}),
+              ...(updates.componentProps || {}),
+            },
+          };
+        }),
+      },
+    });
   },
 
   setCurrentTime: (time: number) => {
