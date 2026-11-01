@@ -37,6 +37,15 @@ export interface ScriptScene {
   sceneIndex: number;
   text: string;
   durationSec: number;
+  // Timing individual por faixa para edição livre assíncrona estilo CapCut
+  motionStartSec?: number;
+  motionDurationSec?: number;
+  mediaStartSec?: number;
+  mediaDurationSec?: number;
+  subtitleStartSec?: number;
+  subtitleDurationSec?: number;
+  audioStartSec?: number;
+  audioDurationSec?: number;
   summary?: string;
   visualPrompt?: string;
   compiledCustomHtml?: string;

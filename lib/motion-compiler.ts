@@ -1,4 +1,5 @@
 import { MOTION_TEMPLATES, MotionTemplateId } from './motion-templates';
+import { buildProceduralMotionScene } from './scene-motion-generator';
 
 export interface WordTimestampItem {
   word: string;
@@ -11,6 +12,15 @@ export interface CompiledSceneData {
   sceneIndex: number;
   templateId: MotionTemplateId;
   durationSec: number;
+  // Timing assíncrono por faixa
+  motionStartSec?: number;
+  motionDurationSec?: number;
+  mediaStartSec?: number;
+  mediaDurationSec?: number;
+  subtitleStartSec?: number;
+  subtitleDurationSec?: number;
+  audioStartSec?: number;
+  audioDurationSec?: number;
   text: string;
   tag?: string;
   headline?: string;
@@ -79,10 +89,11 @@ export function computeWordTimestamps(text: string, durationSec: number): WordTi
 }
 
 /**
- * Gera o Centerpiece HTML/SVG específico para cada um dos 20 Modelos de Motion
+ * Gera o palco visual cinematográfico (HTML5/SVG + GSAP 3) para a cena.
+ * 100% dinâmico e em tela cheia, sem nenhum card estático tipo slide.
  */
 function renderSceneCenterpieceHtml(sc: CompiledSceneData, idx: number, highlightColor: string): string {
-  // Se a IA gerou HTML customizado para essa cena baseado no prompt detalhado, prioriza a renderização direta em tela cheia (sem card estático padronizado)
+  // Se a IA gerou HTML customizado para essa cena baseado no prompt detalhado, prioriza a renderização direta em tela cheia
   if (sc.compiledCustomHtml && sc.compiledCustomHtml.trim().length > 10) {
     return `
       <div class="ai-full-stage" id="cp-${idx}">
@@ -91,237 +102,26 @@ function renderSceneCenterpieceHtml(sc: CompiledSceneData, idx: number, highligh
     `;
   }
 
-  const tpl = sc.templateId || 'hormozi_bold';
-  const headline = escapeHtml(sc.headline || sc.text.slice(0, 48).toUpperCase());
-  const subText = escapeHtml(sc.subText || '');
-  const tag = escapeHtml(sc.tag || 'DESTAQUE');
-  const imgs = sc.collageImages && sc.collageImages.length > 0 ? sc.collageImages : [sc.brollUrl || ''];
+  // Gera proceduralmente o palco visual completo Full-Canvas cinematográfico caso não tenha vindo da IA
+  const procedural = buildProceduralMotionScene({
+    scene: sc,
+    sceneIndex: idx,
+    resolvedTemplate: sc.templateId || 'hormozi_bold',
+    visualPrompt: sc.visualPrompt || sc.headline || '',
+    headline: sc.headline || sc.text.slice(0, 42).toUpperCase(),
+    subText: sc.subText || '',
+    tag: sc.tag || 'DESTAQUE',
+    text: sc.text || '',
+    duration: sc.durationSec || 4.5,
+    highlightColor,
+    primaryTextColor: '#ffffff',
+  });
 
-  switch (tpl) {
-    case 'stat_counter': {
-      const rawNum = parseInt(String(sc.statValue || '92').replace(/\D/g, ''), 10) || 92;
-      const suffix = String(sc.statValue || '92%').replace(/[0-9]/g, '') || '%';
-      return `
-        <div class="centerpiece stat-card" id="cp-${idx}">
-          <div class="stat-ring-wrap">
-            <svg class="stat-svg" viewBox="0 0 260 260">
-              <circle cx="130" cy="130" r="110" stroke="rgba(255,255,255,0.08)" stroke-width="16" fill="none" />
-              <circle id="stat-circle-${idx}" cx="130" cy="130" r="110" stroke="${highlightColor}" stroke-width="16" fill="none"
-                stroke-dasharray="691" stroke-dashoffset="691" stroke-linecap="round" transform="rotate(-90 130 130)" />
-            </svg>
-            <div class="stat-number-box">
-              <span id="stat-num-${idx}" data-target="${rawNum}" data-suffix="${escapeHtml(suffix)}" style="color:${highlightColor}">0${escapeHtml(suffix)}</span>
-            </div>
-          </div>
-          <div class="stat-label-box" id="stat-lbl-${idx}">
-            <div class="stat-headline">${escapeHtml(sc.statLabel || headline)}</div>
-            <div class="stat-sub">${subText}</div>
-          </div>
-        </div>
-      `;
-    }
-
-    case 'grafico_barras': {
-      const bars = sc.barsData && sc.barsData.length > 0
-        ? sc.barsData
-        : [
-            { label: 'Tradicional', value: 32, displayValue: '32%' },
-            { label: 'Média', value: 58, displayValue: '58%' },
-            { label: 'Novo Modelo', value: 95, displayValue: '95%' },
-          ];
-      return `
-        <div class="centerpiece chart-card" id="cp-${idx}">
-          <div class="chart-title">${headline}</div>
-          <div class="bars-stage">
-            ${bars
-              .map(
-                (b, bi) => `
-              <div class="bar-col">
-                <div class="bar-val" id="bar-val-${idx}-${bi}" style="color:${bi === bars.length - 1 ? highlightColor : '#e2e8f0'}">${escapeHtml(b.displayValue || b.value + '%')}</div>
-                <div class="bar-track">
-                  <div class="bar-fill" id="bar-fill-${idx}-${bi}" data-height="${Math.min(100, Math.max(15, b.value))}"
-                    style="background:${bi === bars.length - 1 ? `linear-gradient(180deg, ${highlightColor}, #3b82f6)` : 'linear-gradient(180deg, #475569, #1e293b)'}; box-shadow:${bi === bars.length - 1 ? `0 0 30px ${highlightColor}66` : 'none'}"></div>
-                </div>
-                <div class="bar-label">${escapeHtml(b.label)}</div>
-              </div>
-            `
-              )
-              .join('')}
-          </div>
-        </div>
-      `;
-    }
-
-    case 'versus_comparison': {
-      const v = sc.versusData || {
-        leftTitle: 'MÉTODO ANTIGO',
-        leftItems: ['Lento e manual', 'Baixa retenção', 'Alto custo'],
-        rightTitle: 'NOVO MÉTODO',
-        rightItems: ['Escala imediata', 'Retenção máxima', 'Alta conversão'],
-      };
-      return `
-        <div class="centerpiece versus-stage" id="cp-${idx}">
-          <div class="vs-panel vs-left" id="vs-left-${idx}">
-            <div class="vs-header bad">✕ ${escapeHtml(v.leftTitle)}</div>
-            ${(v.leftItems || []).map((item) => `<div class="vs-item bad-item"><span>✕</span> ${escapeHtml(item)}</div>`).join('')}
-          </div>
-          <div class="vs-badge" id="vs-badge-${idx}">VS</div>
-          <div class="vs-panel vs-right" id="vs-right-${idx}" style="border-color:${highlightColor}">
-            <div class="vs-header good" style="color:${highlightColor}">✓ ${escapeHtml(v.rightTitle)}</div>
-            ${(v.rightItems || []).map((item) => `<div class="vs-item good-item"><span style="color:${highlightColor}">✓</span> ${escapeHtml(item)}</div>`).join('')}
-          </div>
-        </div>
-      `;
-    }
-
-    case 'news_headline': {
-      return `
-        <div class="centerpiece news-clipping" id="cp-${idx}">
-          <div class="news-masthead">
-            <span class="news-live-dot"></span>
-            <span class="news-paper-name">INVESTIGATIVE REPORT • EDIÇÃO ESPECIAL</span>
-            <span class="news-date">${new Date().toLocaleDateString('pt-BR')}</span>
-          </div>
-          <div class="news-body">
-            <div class="news-hl-wrap">
-              <div class="news-highlighter" id="hl-bar-${idx}" style="background:${highlightColor}55"></div>
-              <h2 class="news-title">${headline}</h2>
-            </div>
-            <p class="news-excerpt">${escapeHtml(sc.text)}</p>
-          </div>
-          <div class="news-Photo-strip">
-            <img src="${escapeHtml(imgs[0] || '')}" alt="" onerror="this.style.display='none'" />
-          </div>
-        </div>
-      `;
-    }
-
-    case 'tweet_card': {
-      return `
-        <div class="centerpiece tweet-box" id="cp-${idx}">
-          <div class="tweet-header">
-            <div class="tweet-avatar" style="background:linear-gradient(135deg, ${highlightColor}, #6366f1)">
-              ${escapeHtml((sc.authorName || 'E')[0])}
-            </div>
-            <div class="tweet-user">
-              <div class="tweet-name">${escapeHtml(sc.authorName || 'Análise de Mercado')} <span class="verified">✓</span></div>
-              <div class="tweet-handle">${escapeHtml(sc.authorHandle || '@insider_report')}</div>
-            </div>
-          </div>
-          <div class="tweet-content">${escapeHtml(sc.text)}</div>
-          <div class="tweet-metrics" id="tweet-metrics-${idx}">
-            <span>💬 1.4K</span>
-            <span>🔁 8.9K</span>
-            <span style="color:#f43f5e">❤️ 42.8K</span>
-            <span>📊 1.2M</span>
-          </div>
-        </div>
-      `;
-    }
-
-    case 'chat_simulation': {
-      return `
-        <div class="centerpiece chat-stage" id="cp-${idx}">
-          <div class="chat-bubble incoming" id="chat-1-${idx}">
-            <div class="chat-sender">Cliente / Equipe</div>
-            <div class="chat-msg">Você viu o que acabou de mudar sobre ${headline.toLowerCase()}?</div>
-          </div>
-          <div class="chat-bubble outgoing" id="chat-2-${idx}" style="background:linear-gradient(135deg, #4f46e5, #2563eb)">
-            <div class="chat-msg">${escapeHtml(sc.text)}</div>
-          </div>
-          <div class="chat-bubble incoming highlight-chat" id="chat-3-${idx}" style="border-color:${highlightColor}">
-            <div class="chat-msg" style="color:${highlightColor}; font-weight:800">⚡ ${tag}: Resultado comprovado na prática!</div>
-          </div>
-        </div>
-      `;
-    }
-
-    case 'segredo_revelado': {
-      return `
-        <div class="centerpiece dossier-card" id="cp-${idx}">
-          <div class="dossier-stamp" id="stamp-${idx}">CONFIDENCIAL</div>
-          <div class="dossier-label">ARQUIVO DESCLASSIFICADO #0${idx + 1}</div>
-          <div class="redact-wrap">
-            <div class="secret-text">${headline}</div>
-            <div class="redact-bar" id="redact-${idx}"></div>
-          </div>
-          <div class="dossier-sub">${subText || 'Acesso restrito liberado'}</div>
-        </div>
-      `;
-    }
-
-    case 'lista_passos':
-    case 'timeline_progress':
-    case 'ranking_top3': {
-      const steps = sc.stepsData && sc.stepsData.length > 0
-        ? sc.stepsData
-        : [headline, subText || 'Execução estruturada em alta velocidade', 'Escala com retenção máxima'];
-      return `
-        <div class="centerpiece steps-card" id="cp-${idx}">
-          <div class="steps-header" style="color:${highlightColor}">${headline}</div>
-          <div class="steps-list">
-            ${steps
-              .slice(0, 3)
-              .map(
-                (st, si) => `
-              <div class="step-row" id="step-${idx}-${si}">
-                <div class="step-badge" style="background:${highlightColor}; color:#05070f">${ tpl === 'ranking_top3' ? `#${si + 1}` : '✓' }</div>
-                <div class="step-text">${escapeHtml(st)}</div>
-              </div>
-            `
-              )
-              .join('')}
-          </div>
-        </div>
-      `;
-    }
-
-    case 'split_collage': {
-      return `
-        <div class="centerpiece collage-stage" id="cp-${idx}">
-          <div class="collage-frame frame-1" id="col-1-${idx}">
-            <img src="${escapeHtml(imgs[0] || '')}" alt="" onerror="this.style.opacity='0'" />
-          </div>
-          <div class="collage-frame frame-2" id="col-2-${idx}">
-            <img src="${escapeHtml(imgs[1] || imgs[0] || '')}" alt="" onerror="this.style.opacity='0'" />
-          </div>
-          <div class="collage-caption-card" id="col-cap-${idx}" style="border-color:${highlightColor}">
-            <div class="col-hl" style="color:${highlightColor}">${tag}</div>
-            <div class="col-title">${headline}</div>
-          </div>
-        </div>
-      `;
-    }
-
-    case 'cta_pulse': {
-      return `
-        <div class="centerpiece cta-stage" id="cp-${idx}">
-          <div class="cta-glow-orb" style="background:${highlightColor}"></div>
-          <div class="cta-headline">${headline}</div>
-          <div class="cta-button-3d" id="cta-btn-${idx}" style="background:${highlightColor}; color:#05070f; box-shadow: 0 0 50px ${highlightColor}88">
-            <span>🔥 ${escapeHtml(sc.ctaText || 'COMEÇAR AGORA MESMO')}</span>
-          </div>
-          <svg class="cta-cursor" id="cta-cursor-${idx}" viewBox="0 0 36 36" width="64" height="64">
-            <path d="M8 4 L28 16 L18 19 L23 30 L18 32 L13 21 L8 26 Z" fill="#ffffff" stroke="#000000" stroke-width="2"/>
-          </svg>
-        </div>
-      `;
-    }
-
-    default: {
-      // Hormozi Bold / Alerta / Pergunta / Quote / Luxury / Spotlight / Card Frase
-      return `
-        <div class="centerpiece kinetic-card" id="cp-${idx}">
-          <div class="kinetic-accent-line" id="k-line-${idx}" style="background:${highlightColor}"></div>
-          <div class="kinetic-headline" id="k-hl-${idx}">${headline}</div>
-          <div class="kinetic-highlight-pill" id="k-pill-${idx}" style="background:${highlightColor}; color:#05070f">
-            ⚡ ${escapeHtml(sc.highlightWord || tag)}
-          </div>
-          ${sc.compiledCustomHtml ? `<div class="ai-custom-layer">${sc.compiledCustomHtml}</div>` : ''}
-        </div>
-      `;
-    }
-  }
+  return `
+    <div class="ai-full-stage" id="cp-${idx}">
+      ${procedural.html}
+    </div>
+  `;
 }
 
 /**
@@ -373,9 +173,7 @@ export function buildMasterVideoHtml(config: MasterCompositionConfig): string {
         }
       }
 
-      const centerpieceHtml = sc.compiledCustomHtml && sc.compiledCustomHtml.trim().length > 10
-        ? `<div class="ai-stage-fullscreen" id="cp-${sc.idx}">${sc.compiledCustomHtml}</div>`
-        : `<div class="stage-center"><div class="centerpiece" id="cp-${sc.idx}">${centerpiece}</div></div>`;
+      const centerpieceHtml = `<div class="ai-stage-fullscreen" id="stage-wrapper-${sc.idx}">${centerpiece}</div>`;
 
       return `
       <section class="scene-clip clip" id="scene-${sc.idx}" data-index="${sc.idx}" data-start="${sc.startSec}" data-duration="${sc.durationSec}" style="${sc.idx === 0 ? 'opacity:1;visibility:inherit;z-index:10;' : ''}">
@@ -394,16 +192,7 @@ export function buildMasterVideoHtml(config: MasterCompositionConfig): string {
             : ''
         }
 
-        <!-- Camada 1: Header HUD Documentário -->
-        <div class="hud-top" id="hud-${sc.idx}">
-          <div class="hud-badge" style="border-color:${highlightColor}; color:${highlightColor}">
-            <span class="hud-dot" style="background:${highlightColor}"></span>
-            <span>${escapeHtml((sc.tag || tplMeta.badge).toUpperCase())}</span>
-          </div>
-          <div class="hud-counter">CENA 0${sc.idx + 1} // ${sc.durationSec.toFixed(1)}S</div>
-        </div>
-
-        <!-- Camada 2: Palco Visual (IA Custom Canvas ou Centerpiece Dinâmico) -->
+        <!-- Camada 2: Palco Visual Dinâmico 100% Full-Canvas -->
         ${centerpieceHtml}
 
         <!-- Camada 3: Legendas Cinéticas Pop Word-by-Word (Karaoke Hormozi Ultra-Visível) -->
@@ -441,7 +230,8 @@ export function buildMasterVideoHtml(config: MasterCompositionConfig): string {
       const s = sc.startSec;
       const d = sc.durationSec;
       const idx = sc.idx;
-      const hlColor = sc.highlightColor || '#facc15';
+      const highlightColor = sc.highlightColor || '#facc15';
+      const hlColor = highlightColor;
 
       // Divide palavras em blocos de 4 a 5 palavras
       const chunks: Array<{ start: number; end: number; words: Array<WordTimestampItem & { globalIdx: number }> }> = [];
@@ -487,50 +277,36 @@ export function buildMasterVideoHtml(config: MasterCompositionConfig): string {
         });
       });
 
+      // Offset individual assíncrono para cada faixa se customizado pelo usuário
+      const motionStart = typeof sc.motionStartSec === 'number' ? sc.motionStartSec : s;
+      const motionDur = typeof sc.motionDurationSec === 'number' ? sc.motionDurationSec : d;
+
+      const mediaStart = typeof sc.mediaStartSec === 'number' ? sc.mediaStartSec : s;
+      const mediaDur = typeof sc.mediaDurationSec === 'number' ? sc.mediaDurationSec : d;
+
       return `
       // --- CENA #${idx + 1} (${sc.templateId}) [${s}s -> ${sc.endSec}s] ---
-      masterTl.set("#scene-${idx}", { autoAlpha: 1, zIndex: ${10 + idx} }, ${s});
+      masterTl.set("#scene-${idx}", { autoAlpha: 1, zIndex: ${10 + idx} }, ${Math.min(s, mediaStart, motionStart)});
 
-      // 1. Câmera Contínua Ken Burns (Movimento cinematográfico contínuo durante toda a cena)
+      // 1. Câmera Contínua Ken Burns (Movimento cinematográfico contínuo durante a faixa de mídia)
       masterTl.fromTo("#broll-img-${idx}",
         { scale: 1.0, xPercent: 0, yPercent: 0 },
-        { scale: 1.18, xPercent: ${idx % 2 === 0 ? 3 : -3}, yPercent: ${idx % 2 === 0 ? -2 : 2}, duration: ${d}, ease: "none" },
-        ${s}
+        { scale: 1.18, xPercent: ${idx % 2 === 0 ? 3 : -3}, yPercent: ${idx % 2 === 0 ? -2 : 2}, duration: ${mediaDur}, ease: "none" },
+        ${mediaStart}
       );
       masterTl.fromTo("#glow-${idx}",
         { scale: 0.8, opacity: 0.2 },
-        { scale: 1.3, opacity: 0.6, duration: ${d}, ease: "power1.inOut" },
-        ${s}
+        { scale: 1.3, opacity: 0.6, duration: ${mediaDur}, ease: "power1.inOut" },
+        ${mediaStart}
       );
 
-      // 2. HUD Top Entry
-      masterTl.fromTo("#hud-${idx}",
-        { y: -60, autoAlpha: 0 },
-        { y: 0, autoAlpha: 1, duration: 0.45, ease: "back.out(1.7)" },
-        ${s + 0.05}
+      // 2. Elemento Motion 3D (Entrada e saída conforme timing da Pista de Motion)
+      masterTl.set("#cp-${idx}", { autoAlpha: 1, display: "flex" }, ${motionStart});
+      masterTl.fromTo("#cp-${idx}",
+        { scale: 0.94, autoAlpha: 0 },
+        { scale: 1, autoAlpha: 1, duration: 0.45, ease: "power2.out" },
+        ${motionStart}
       );
-
-      // 3. Centerpiece Entry com Impacto 3D
-      if (!sc.compiledCustomHtml) {
-        masterTl.fromTo("#cp-${idx}",
-          { scale: 0.82, y: 70, rotationX: 18, autoAlpha: 0 },
-          { scale: 1, y: 0, rotationX: 0, autoAlpha: 1, duration: 0.55, ease: "back.out(1.5)" },
-          ${s + 0.1}
-        );
-
-        // Movimento secundário contínuo no Centerpiece (Flutuação suave para eliminar efeito estático)
-        masterTl.to("#cp-${idx}",
-          { y: -12, duration: ${d * 0.5}, ease: "sine.inOut", yoyo: true, repeat: 1 },
-          ${s + 0.65}
-        );
-      } else {
-        masterTl.set("#cp-${idx}", { autoAlpha: 1, display: "flex" }, ${s});
-        masterTl.fromTo("#cp-${idx}",
-          { scale: 0.94, autoAlpha: 0 },
-          { scale: 1, autoAlpha: 1, duration: 0.45, ease: "power2.out" },
-          ${s}
-        );
-      }
 
       // 4. Barra de Progresso
       masterTl.fromTo("#prog-${idx}",
@@ -542,60 +318,24 @@ export function buildMasterVideoHtml(config: MasterCompositionConfig): string {
       // 5. Legendas Word-by-Word sincronizadas na timeline
       ${captionsGsap}
 
-      // Animações Específicas por Arquitetura
-      if (document.querySelector("#stat-circle-${idx}")) {
-        masterTl.to("#stat-circle-${idx}", { strokeDashoffset: 95, duration: 1.4, ease: "power3.out" }, ${s + 0.25});
-      }
-      if (document.querySelector("#bar-fill-${idx}-0")) {
-        [0, 1, 2].forEach((bi) => {
-          const el = document.querySelector("#bar-fill-${idx}-" + bi);
-          if (el) {
-            const targetH = el.getAttribute("data-height") || "75";
-            masterTl.fromTo(el, { height: "0%" }, { height: targetH + "%", duration: 0.9, ease: "elastic.out(1, 0.75)" }, ${s + 0.25} + bi * 0.15);
-          }
-        });
-      }
-      if (document.querySelector("#vs-left-${idx}")) {
-        masterTl.fromTo("#vs-left-${idx}", { x: -120, autoAlpha: 0 }, { x: 0, autoAlpha: 1, duration: 0.5, ease: "power3.out" }, ${s + 0.2});
-        masterTl.fromTo("#vs-badge-${idx}", { scale: 0, rotation: -180 }, { scale: 1, rotation: 0, duration: 0.5, ease: "back.out(2)" }, ${s + 0.35});
-        masterTl.fromTo("#vs-right-${idx}", { x: 120, autoAlpha: 0 }, { x: 0, autoAlpha: 1, duration: 0.5, ease: "power3.out" }, ${s + 0.45});
-      }
-      if (document.querySelector("#hl-bar-${idx}")) {
-        masterTl.fromTo("#hl-bar-${idx}", { width: "0%" }, { width: "102%", duration: 0.65, ease: "power2.inOut" }, ${s + 0.45});
-      }
-      if (document.querySelector("#redact-${idx}")) {
-        masterTl.fromTo("#stamp-${idx}", { scale: 2.5, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: 0.35, ease: "power4.in" }, ${s + 0.3});
-        masterTl.to("#redact-${idx}", { xPercent: 105, duration: 0.7, ease: "power3.inOut" }, ${s + 1.1});
-      }
-      if (document.querySelector("#chat-1-${idx}")) {
-        masterTl.fromTo("#chat-1-${idx}", { y: 40, scale: 0.85, autoAlpha: 0 }, { y: 0, scale: 1, autoAlpha: 1, duration: 0.4, ease: "back.out(1.6)" }, ${s + 0.2});
-        masterTl.fromTo("#chat-2-${idx}", { y: 40, scale: 0.85, autoAlpha: 0 }, { y: 0, scale: 1, autoAlpha: 1, duration: 0.4, ease: "back.out(1.6)" }, ${s + 0.9});
-        masterTl.fromTo("#chat-3-${idx}", { y: 40, scale: 0.85, autoAlpha: 0 }, { y: 0, scale: 1, autoAlpha: 1, duration: 0.4, ease: "back.out(1.6)" }, ${s + 1.7});
-      }
-      if (document.querySelector("#step-${idx}-0")) {
-        [0, 1, 2].forEach((si) => {
-          const stEl = document.querySelector("#step-${idx}-" + si);
-          if (stEl) {
-            masterTl.fromTo(stEl, { x: -70, autoAlpha: 0 }, { x: 0, autoAlpha: 1, duration: 0.45, ease: "power3.out" }, ${s + 0.25} + si * 0.35);
-          }
-        });
-      }
-      if (document.querySelector("#col-1-${idx}")) {
-        masterTl.fromTo("#col-1-${idx}", { x: -90, rotation: -12, autoAlpha: 0 }, { x: -30, rotation: -5, autoAlpha: 1, duration: 0.6, ease: "power3.out" }, ${s + 0.15});
-        masterTl.fromTo("#col-2-${idx}", { x: 90, rotation: 12, autoAlpha: 0 }, { x: 35, rotation: 6, autoAlpha: 1, duration: 0.6, ease: "power3.out" }, ${s + 0.35});
-        masterTl.fromTo("#col-cap-${idx}", { y: 60, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: 0.5, ease: "back.out(1.7)" }, ${s + 0.55});
-      }
-      if (document.querySelector("#cta-cursor-${idx}")) {
-        masterTl.fromTo("#cta-cursor-${idx}", { x: 220, y: 240, autoAlpha: 0 }, { x: 40, y: 35, autoAlpha: 1, duration: 0.75, ease: "power2.out" }, ${s + 0.5});
-        masterTl.to("#cta-btn-${idx}", { scale: 0.93, duration: 0.12 }, ${s + 1.25});
-        masterTl.to("#cta-btn-${idx}", { scale: 1.06, duration: 0.25, ease: "elastic.out(1.2, 0.4)" }, ${s + 1.37});
-      }
-
       try {
         ${
-          sc.compiledGsapScript
-            ? sc.compiledGsapScript.replace(/START_SEC/g, String(s))
-            : ''
+          (sc.compiledGsapScript && sc.compiledGsapScript.trim().length > 20
+            ? sc.compiledGsapScript
+            : buildProceduralMotionScene({
+                scene: sc,
+                sceneIndex: sc.idx,
+                resolvedTemplate: sc.templateId || 'hormozi_bold',
+                visualPrompt: sc.visualPrompt || sc.headline || '',
+                headline: sc.headline || sc.text.slice(0, 42).toUpperCase(),
+                subText: sc.subText || '',
+                tag: sc.tag || 'DESTAQUE',
+                text: sc.text || '',
+                duration: motionDur,
+                highlightColor,
+                primaryTextColor: '#ffffff',
+              }).gsap
+          ).replace(/START_SEC/g, String(motionStart))
         }
       } catch (err) {
         console.warn("GSAP custom scene warning:", err);
@@ -620,20 +360,35 @@ export function buildMasterVideoHtml(config: MasterCompositionConfig): string {
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
     html, body {
-      width: ${width}px;
-      height: ${height}px;
+      width: 100%;
+      height: 100%;
       overflow: hidden;
       background: #04060d;
       font-family: 'Inter', sans-serif;
       color: #ffffff;
+      margin: 0;
+      padding: 0;
+    }
+    #stage-viewport {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      background: #04060d;
+      position: absolute;
+      inset: 0;
     }
     #root {
-      position: relative;
+      position: absolute;
       width: ${width}px;
       height: ${height}px;
       overflow: hidden;
       perspective: 1200px;
       background: #04060d;
+      transform-origin: center center;
+      flex-shrink: 0;
     }
     .clip {
       position: absolute;
@@ -655,19 +410,19 @@ export function buildMasterVideoHtml(config: MasterCompositionConfig): string {
       position: absolute;
       inset: 0;
       z-index: 0;
-      background: radial-gradient(circle at 50% 30%, #1e1b4b 0%, #04060d 75%);
+      background: #04060d;
     }
     .broll-img {
       width: 100%;
       height: 100%;
       object-fit: cover;
-      opacity: 0.42;
-      filter: contrast(1.12) saturate(1.1);
+      opacity: 0.88;
+      filter: contrast(1.15) saturate(1.2) brightness(0.92);
     }
     .broll-vignette {
       position: absolute;
       inset: 0;
-      background: linear-gradient(180deg, rgba(4,6,13,0.88) 0%, rgba(4,6,13,0.45) 45%, rgba(4,6,13,0.94) 100%);
+      background: radial-gradient(circle at center, rgba(4,6,13,0.2) 30%, rgba(4,6,13,0.78) 100%);
     }
     .broll-grid-overlay {
       position: absolute;
@@ -727,13 +482,14 @@ export function buildMasterVideoHtml(config: MasterCompositionConfig): string {
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      padding: 60px 50px 200px;
+      padding: 0;
       pointer-events: none;
     }
     .ai-full-stage {
       width: 100%;
       height: 100%;
-      position: relative;
+      position: absolute;
+      inset: 0;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -920,12 +676,33 @@ export function buildMasterVideoHtml(config: MasterCompositionConfig): string {
   </style>
 </head>
 <body>
-  <div id="root" data-composition-id="root" data-start="0" data-width="${width}" data-height="${height}" data-duration="${totalDuration}">
-    ${config.fullAudioUrl ? `<audio id="master-narration-audio" src="${escapeHtml(config.fullAudioUrl)}" preload="auto" style="display:none"></audio>` : ''}
-    ${scenesDom}
+  <div id="stage-viewport">
+    <div id="root" data-composition-id="root" data-start="0" data-width="${width}" data-height="${height}" data-duration="${totalDuration}">
+      ${config.fullAudioUrl ? `<audio id="master-narration-audio" src="${escapeHtml(config.fullAudioUrl)}" preload="auto" style="display:none"></audio>` : ''}
+      ${scenesDom}
+    </div>
   </div>
 
   <script>
+    // Auto-fit responsivo do Canvas (1080x1920) à janela do iframe sem cortar
+    function autoFitCanvas() {
+      const root = document.getElementById('root');
+      if (!root) return;
+      const targetW = ${width};
+      const targetH = ${height};
+      const winW = window.innerWidth || document.documentElement.clientWidth;
+      const winH = window.innerHeight || document.documentElement.clientHeight;
+      if (winW <= 0 || winH <= 0) return;
+      const scale = Math.min(winW / targetW, winH / targetH);
+      root.style.transform = 'scale(' + scale + ')';
+      root.style.left = ((winW - targetW) / 2) + 'px';
+      root.style.top = ((winH - targetH) / 2) + 'px';
+    }
+    window.addEventListener('resize', autoFitCanvas);
+    document.addEventListener('DOMContentLoaded', autoFitCanvas);
+    setTimeout(autoFitCanvas, 50);
+    setTimeout(autoFitCanvas, 300);
+    autoFitCanvas();
     window.__timelines = window.__timelines || {};
     const masterAudio = document.getElementById('master-narration-audio');
     const sceneAudios = Array.from(document.querySelectorAll('.scene-clip audio'));
@@ -995,13 +772,19 @@ export function buildMasterVideoHtml(config: MasterCompositionConfig): string {
         } catch (e) {}
       },
       onComplete: function () {
-        syncAudioPlayback(this.duration(), false);
-        try {
-          window.parent.postMessage({ type: 'HYPERFRAME_PLAYBACK_ENDED' }, '*');
-        } catch (e) {}
+        if (this.time() >= ${totalDuration} - 0.15) {
+          syncAudioPlayback(this.duration(), false);
+          try {
+            window.parent.postMessage({ type: 'HYPERFRAME_PLAYBACK_ENDED' }, '*');
+          } catch (e) {}
+        }
       }
     });
+
     ${gsapSceneScripts}
+
+    // Fixa o fim exato da timeline para totalDuration evitando finalização prematura
+    masterTl.to({}, { duration: 0.01 }, ${totalDuration});
 
     window.__timelines.root = masterTl;
 
@@ -1013,7 +796,7 @@ export function buildMasterVideoHtml(config: MasterCompositionConfig): string {
     }
 
     function playVideo() {
-      if (masterTl.time() >= ${totalDuration} - 0.05) {
+      if (masterTl.time() >= ${totalDuration} - 0.1) {
         masterTl.time(0);
       }
       masterTl.play();
@@ -1028,6 +811,8 @@ export function buildMasterVideoHtml(config: MasterCompositionConfig): string {
     window.seekToTime = seekToTime;
     window.playVideo = playVideo;
     window.pauseVideo = pauseVideo;
+
+    // Inicializa a agulha no frame 0
     seekToTime(0);
 
     window.addEventListener('message', (event) => {
@@ -1044,6 +829,13 @@ export function buildMasterVideoHtml(config: MasterCompositionConfig): string {
         sceneAudios.forEach((a) => { a.volume = vol; });
       }
     });
+
+    // Registra listener no documento para garantir que o primeiro clique/toque do usuário desbloqueie o áudio do navegador
+    document.addEventListener('click', () => {
+      if (masterAudio && masterAudio.paused && !masterTl.paused()) {
+        masterAudio.play().catch(() => {});
+      }
+    }, { once: true });
   </script>
 </body>
 </html>`;

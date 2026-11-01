@@ -33,6 +33,7 @@ declare global {
 interface HyperFramesLivePlayerProps {
   compositionHtml: string;
   aspectRatio?: '9:16' | '16:9' | '1:1';
+  audioUrl?: string;
   isPlaying?: boolean;
   currentTime?: number;
   onTimeUpdate?: (currentTime: number) => void;
@@ -48,6 +49,7 @@ interface HyperFramesLivePlayerProps {
 export function HyperFramesLivePlayer({
   compositionHtml,
   aspectRatio = '9:16',
+  audioUrl,
   isPlaying = false,
   currentTime = 0,
   onTimeUpdate,
@@ -55,55 +57,67 @@ export function HyperFramesLivePlayer({
   onPlaybackEnded,
   className = '',
 }: HyperFramesLivePlayerProps) {
-  const [isLoaded, setIsLoaded] = useState(false);
-  const playerRef = useRef<any>(null);
+  const [useIframeFallback, setUseIframeFallback] = useState(true);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const prevTimeRef = useRef<number>(currentTime);
   const prevPlayingRef = useRef<boolean>(isPlaying);
+  const parentAudioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Importa o web component @hyperframes/player no browser
+  // Áudio da narração executado com privilégio nativo na janela mãe para contornar bloqueios de autoplay de iframes
   useEffect(() => {
-    import('@hyperframes/player')
-      .then(() => {
-        setIsLoaded(true);
-      })
-      .catch((err) => {
-        console.error('Erro ao registrar @hyperframes/player:', err);
-      });
-  }, []);
+    if (!audioUrl) return;
+    if (!parentAudioRef.current) {
+      const a = new Audio(audioUrl);
+      parentAudioRef.current = a;
+    } else if (parentAudioRef.current.src !== audioUrl) {
+      parentAudioRef.current.src = audioUrl;
+    }
+  }, [audioUrl]);
 
-  // Helper para enviar comandos postMessage ao iframe interno da composição
+  useEffect(() => {
+    const a = parentAudioRef.current;
+    if (!a) return;
+    if (isPlaying) {
+      if (Math.abs(a.currentTime - currentTime) > 0.3) {
+        a.currentTime = currentTime;
+      }
+      a.play().catch(() => {});
+    } else {
+      a.pause();
+    }
+  }, [isPlaying]);
+
+  useEffect(() => {
+    const a = parentAudioRef.current;
+    if (!a) return;
+    if (!isPlaying && Math.abs(a.currentTime - currentTime) > 0.2) {
+      a.currentTime = currentTime;
+    }
+  }, [currentTime, isPlaying]);
+
+  // Helper para enviar comandos postMessage ao iframe da composição
   const postToIframe = useCallback((message: any) => {
-    const el = playerRef.current;
-    if (!el) return;
-    try {
-      // 1. Tenta acessar via shadowRoot do hyperframes-player
-      const iframe = el.shadowRoot?.querySelector('iframe') || el.querySelector('iframe');
-      if (iframe && iframe.contentWindow) {
+    const iframe = iframeRef.current;
+    if (iframe && iframe.contentWindow) {
+      try {
         iframe.contentWindow.postMessage(message, '*');
-        return;
-      }
-    } catch (e) {}
-
-    // 2. Tenta método nativo do elemento se existir
-    try {
-      if (message.type === 'PLAY_VIDEO' && typeof el.play === 'function') {
-        el.play();
-      } else if (message.type === 'PAUSE_VIDEO' && typeof el.pause === 'function') {
-        el.pause();
-      } else if (message.type === 'SEEK_VIDEO' && typeof el.seek === 'function') {
-        el.seek(message.time);
-      }
-    } catch (e) {}
+      } catch (e) {}
+    }
   }, []);
 
-  // Ouve mensagens de retorno enviadas de dentro do iframe (onUpdate do GSAP)
+  // Ouve mensagens de retorno do GSAP enviadas de dentro do iframe
   useEffect(() => {
     const handleWindowMessage = (event: MessageEvent) => {
       if (!event.data) return;
       if (event.data.type === 'HYPERFRAME_TIME_UPDATE') {
         const t = Number(event.data.currentTime) || 0;
+        prevTimeRef.current = t;
         onTimeUpdate?.(t);
       } else if (event.data.type === 'HYPERFRAME_PLAYBACK_ENDED') {
+        if (parentAudioRef.current) {
+          parentAudioRef.current.pause();
+          parentAudioRef.current.currentTime = 0;
+        }
         onPlaybackEnded?.();
       }
     };
@@ -114,103 +128,58 @@ export function HyperFramesLivePlayer({
     };
   }, [onTimeUpdate, onPlaybackEnded]);
 
-  // Sincroniza Play/Pause externo com o Player e o Iframe
+  // Sincroniza Play/Pause externo com o iframe
   useEffect(() => {
     if (isPlaying !== prevPlayingRef.current) {
       prevPlayingRef.current = isPlaying;
-      const el = playerRef.current;
       if (isPlaying) {
-        if (el && typeof el.play === 'function') {
-          try { el.play(); } catch (e) {}
-        }
         postToIframe({ type: 'PLAY_VIDEO' });
       } else {
-        if (el && typeof el.pause === 'function') {
-          try { el.pause(); } catch (e) {}
-        }
         postToIframe({ type: 'PAUSE_VIDEO' });
       }
     }
   }, [isPlaying, postToIframe]);
 
-  // Sincroniza Scrubbing / Seek de agulha externo
+  // Sincroniza Scrubbing / Seek de agulha externo SOMENTE quando NÃO estiver reproduzindo ativamente
   useEffect(() => {
-    if (Math.abs(currentTime - prevTimeRef.current) > 0.08) {
+    if (!isPlaying && Math.abs(currentTime - prevTimeRef.current) > 0.1) {
       prevTimeRef.current = currentTime;
-      const el = playerRef.current;
-      if (el) {
-        if (typeof el.seek === 'function') {
-          try { el.seek(currentTime); } catch (e) {}
-        } else if ('currentTime' in el) {
-          try { el.currentTime = currentTime; } catch (e) {}
-        }
-      }
       postToIframe({ type: 'SEEK_VIDEO', time: currentTime });
     }
-  }, [currentTime, postToIframe]);
-
-  // Ouve eventos do próprio Custom Element do HyperFrames
-  useEffect(() => {
-    const el = playerRef.current;
-    if (!el) return;
-
-    const handleTimeUpdate = (e: any) => {
-      const time = el.currentTime ?? e.detail ?? 0;
-      onTimeUpdate?.(time);
-    };
-
-    const handleReady = (e: any) => {
-      const dur = el.duration ?? e.detail?.duration ?? 0;
-      if (dur > 0) onDurationChange?.(dur);
-    };
-
-    el.addEventListener('timeupdate', handleTimeUpdate);
-    el.addEventListener('ready', handleReady);
-    el.addEventListener('durationchange', handleReady);
-
-    return () => {
-      el.removeEventListener('timeupdate', handleTimeUpdate);
-      el.removeEventListener('ready', handleReady);
-      el.removeEventListener('durationchange', handleReady);
-    };
-  }, [isLoaded, onTimeUpdate, onDurationChange]);
+  }, [currentTime, isPlaying, postToIframe]);
 
   const width = aspectRatio === '16:9' ? 1920 : 1080;
   const height = aspectRatio === '16:9' ? 1080 : 1920;
 
   const aspectClass =
     aspectRatio === '9:16'
-      ? 'w-[330px] sm:w-[370px] h-[580px] sm:h-[650px]'
+      ? 'aspect-[9/16] h-full max-h-[calc(100vh-280px)] w-auto'
       : aspectRatio === '16:9'
-      ? 'w-full max-w-[800px] h-[450px]'
-      : 'w-[450px] h-[450px]';
+      ? 'aspect-[16/9] w-full max-w-[800px] h-auto'
+      : 'aspect-square w-[450px] h-[450px]';
 
   return (
     <div
       className={`relative ${aspectClass} rounded-2xl overflow-hidden shadow-2xl border border-white/10 bg-[#04060d] flex items-center justify-center ${className}`}
+      style={{
+        aspectRatio: aspectRatio === '9:16' ? '9/16' : aspectRatio === '16:9' ? '16/9' : '1/1',
+      }}
     >
-      {!isLoaded ? (
-        <div className="flex flex-col items-center justify-center gap-2 text-white text-xs">
-          <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
-          <span>Iniciando HyperFrames Player...</span>
-        </div>
-      ) : (
-        <hyperframes-player
-          key={`${aspectRatio}-${compositionHtml.length}`}
-          ref={playerRef}
-          srcdoc={compositionHtml}
-          controls
-          loop
-          width={width}
-          height={height}
-          style={{
-            width: '100%',
-            height: '100%',
-            display: 'block',
-            backgroundColor: '#04060d',
-          }}
-        />
-      )}
+      <iframe
+        ref={iframeRef}
+        key={`${aspectRatio}-${compositionHtml.length}`}
+        srcDoc={compositionHtml}
+        title="HyperFrames Live Stage"
+        sandbox="allow-scripts allow-same-origin"
+        allow="autoplay; fullscreen"
+        style={{
+          width: '100%',
+          height: '100%',
+          border: 'none',
+          backgroundColor: '#04060d',
+          display: 'block',
+        }}
+      />
     </div>
   );
 }

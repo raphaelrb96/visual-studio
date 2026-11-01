@@ -280,9 +280,39 @@ function CreatePageContent() {
     if (!promptInput.trim()) return;
 
     setIsGenerating(true);
-    setSceneProgressList([]);
-    setGenerationProgress(18);
-    setGenerationStage('Concepcionando roteiro de retenção e prompts visuais de cada cena...');
+    setGenerationProgress(15);
+    setGenerationStage('Concepcionando roteiro de retenção e narrativa...');
+    setSceneProgressList([
+      { idx: 0, label: 'Estruturação do Roteiro & Ganchos Virais', status: 'active' },
+      { idx: 1, label: 'Sintetização da Locução Neural Contínua', status: 'pending' },
+      { idx: 2, label: 'Geração dos Prompts Visuais das Cenas', status: 'pending' },
+      { idx: 3, label: 'Compilação Cinematográfica HyperFrames', status: 'pending' },
+    ]);
+
+    const progressTimer = setInterval(() => {
+      setGenerationProgress((p) => {
+        if (p < 40) {
+          setGenerationStage('Sintetizando locução neural contínua...');
+          setSceneProgressList((list) =>
+            list.map((it, i) => (i === 0 ? { ...it, status: 'done' } : i === 1 ? { ...it, status: 'active' } : it))
+          );
+          return p + 10;
+        } else if (p < 75) {
+          setGenerationStage('Gerando direção visual e prompts de cada cena...');
+          setSceneProgressList((list) =>
+            list.map((it, i) => (i <= 1 ? { ...it, status: 'done' } : i === 2 ? { ...it, status: 'active' } : it))
+          );
+          return p + 8;
+        } else if (p < 92) {
+          setGenerationStage('Compilando composições dinâmicas HyperFrames...');
+          setSceneProgressList((list) =>
+            list.map((it, i) => (i <= 2 ? { ...it, status: 'done' } : i === 3 ? { ...it, status: 'active' } : it))
+          );
+          return p + 4;
+        }
+        return p;
+      });
+    }, 600);
 
     try {
       const res = await fetch('/api/studio/generate-complete', {
@@ -303,7 +333,9 @@ function CreatePageContent() {
         throw new Error('Falha ao gerar o roteiro com IA');
       }
 
-      setGenerationProgress(68);
+      clearInterval(progressTimer);
+      setSceneProgressList((list) => list.map((it) => ({ ...it, status: 'done' })));
+      setGenerationProgress(95);
       setGenerationStage('Sintetizando locução unificada e alinhando prompts de cenas...');
       const data = await res.json();
       const generatedScenes = data.scenes || [];
@@ -334,31 +366,27 @@ function CreatePageContent() {
       // Avança para a Etapa 4 (Revisão de Roteiro e Cenas)
       setCreationStep(4);
     } catch (err: any) {
+      clearInterval(progressTimer);
       console.error('Erro na geração do roteiro:', err);
       alert('Houve uma falha ao gerar o roteiro com IA. Tente novamente em alguns segundos.');
     } finally {
+      clearInterval(progressTimer);
       setIsGenerating(false);
       setGenerationStage('');
       setGenerationProgress(0);
+      setSceneProgressList([]);
     }
   };
 
-  // ETAPA 4 -> ESTÚDIO: ABRIR NO EDITOR E COMPILAR VÍDEO COM IA CENA A CENA (SEQUENCIAL COM PROGRESS BAR)
+  // ETAPA 4 -> ESTÚDIO: ABRIR NO EDITOR E COMPILAR VÍDEO NO HYPERFRAMES
   const handleOpenStudio = async () => {
     const scenesToCompile = generatedScriptData.scenes || [];
     const total = scenesToCompile.length;
     if (total === 0) return;
 
     setIsGenerating(true);
-    setGenerationProgress(5);
-    setGenerationStage(`Gerando cena 1 de ${total}...`);
-    setSceneProgressList(
-      scenesToCompile.map((s, i) => ({
-        idx: i,
-        label: `Cena ${i + 1}: ${(s.summary || s.text || '').slice(0, 48)}...`,
-        status: i === 0 ? 'active' : 'pending',
-      }))
-    );
+    setGenerationProgress(25);
+    setGenerationStage('Sincronizando palcos animados e preparando timeline...');
 
     try {
       const activePreset = availablePresets.find((p) => p.id === presetSelection) || availablePresets[0] || DEFAULT_STYLE_PRESETS[0];
@@ -366,67 +394,38 @@ function CreatePageContent() {
       const textColor = activePreset.theme.primaryTextColor || '#ffffff';
       const bgColor = activePreset.theme.backgroundColor || '#050505';
 
-      const compiledScenes: ScriptScene[] = [];
-
-      // Compila cada cena sequencialmente para atualizar a barra de progresso em tempo real e evitar rate-limit
-      for (let idx = 0; idx < total; idx++) {
-        const scene = scenesToCompile[idx];
-        const startPct = Math.round((idx / total) * 85) + 5;
-        setGenerationProgress(startPct);
-        setGenerationStage(`Gerando cena ${idx + 1} de ${total} com IA...`);
-        setSceneProgressList((prev) =>
-          prev.map((item, i) => ({
-            ...item,
-            status: i < idx ? 'done' : i === idx ? 'active' : 'pending',
-          }))
-        );
-
-        let compiledResult: ScriptScene = scene;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8500);
-
-        try {
-          const compRes = await fetch('/api/studio/compile-scene', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            signal: controller.signal,
-            body: JSON.stringify({
-              scene,
-              sceneIndex: idx,
-              aspectRatio: aspectRatioSelection,
-              highlightColor: hlColor,
-              primaryTextColor: textColor,
-              backgroundColor: bgColor,
-              templateId: scene.templateId || scene.componentType || templateSelection,
-            }),
-          });
-
-          if (compRes.ok) {
-            const compData = await compRes.json();
-            if (compData.compiledScene) {
-              compiledResult = compData.compiledScene;
+      // Compila com a IA cada cena a partir do seu visualPrompt
+      const compiledScenes: ScriptScene[] = await Promise.all(
+        scenesToCompile.map(async (scene, idx) => {
+          try {
+            const compRes = await fetch('/api/studio/compile-scene', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                scene,
+                sceneIndex: idx,
+                aspectRatio: aspectRatioSelection,
+                highlightColor: hlColor,
+                primaryTextColor: textColor,
+                backgroundColor: bgColor,
+                templateId: scene.templateId || scene.componentType || templateSelection,
+              }),
+            });
+            if (compRes.ok) {
+              const compData = await compRes.json();
+              if (compData.compiledScene?.compiledCustomHtml && compData.compiledScene?.compiledGsapScript) {
+                return compData.compiledScene;
+              }
             }
+          } catch (sceneErr) {
+            console.warn(`Fallback na compilação da cena #${idx + 1}:`, sceneErr);
           }
-        } catch (sceneErr) {
-          console.warn(`Timeout/Fallback na compilação da cena #${idx + 1}:`, sceneErr);
-        } finally {
-          clearTimeout(timeoutId);
-        }
+          return scene;
+        })
+      );
 
-        compiledScenes.push(compiledResult);
-
-        const donePct = Math.round(((idx + 1) / total) * 85) + 8;
-        setGenerationProgress(Math.min(95, donePct));
-        setSceneProgressList((prev) =>
-          prev.map((item, i) => ({
-            ...item,
-            status: i <= idx ? 'done' : 'pending',
-          }))
-        );
-      }
-
-      setGenerationProgress(98);
-      setGenerationStage('Finalizando estúdio e montando timeline no HyperFrames...');
+      setGenerationProgress(85);
+      setGenerationStage('Salvando projeto e montando estúdio no HyperFrames...');
 
       // Atualiza o store com as cenas contendo o HTML5/SVG + GSAP 3 real gerado
       setScenes(compiledScenes);
@@ -459,7 +458,7 @@ function CreatePageContent() {
       }
 
       setGenerationProgress(100);
-      // Transiciona para o Estúdio
+      // Transiciona imediatamente para o Estúdio
       setHasActiveProject(true);
     } catch (e) {
       console.error('Erro ao abrir estúdio:', e);
@@ -606,6 +605,14 @@ function CreatePageContent() {
           authorName: p.authorName || 'Autoridade do Setor',
           authorHandle: p.authorHandle || '@expert_viral',
           ctaText: p.buttonText || 'Quero Começar Agora',
+          motionStartSec: s.motionStartSec,
+          motionDurationSec: s.motionDurationSec,
+          mediaStartSec: s.mediaStartSec,
+          mediaDurationSec: s.mediaDurationSec,
+          subtitleStartSec: s.subtitleStartSec,
+          subtitleDurationSec: s.subtitleDurationSec,
+          audioStartSec: s.audioStartSec,
+          audioDurationSec: s.audioDurationSec,
           compiledCustomHtml: s.compiledCustomHtml,
           compiledGsapScript: s.compiledGsapScript,
         };
@@ -1217,22 +1224,33 @@ function CreatePageContent() {
 
                 <div className="space-y-3">
                   {generatedScriptData.scenes.map((scene, idx) => {
+                    const sceneTpl =
+                      MOTION_TEMPLATES.find((t) => t.id === (scene.templateId || scene.componentType)) ||
+                      MOTION_TEMPLATES[0];
+
                     return (
                       <div
                         key={scene.id || idx}
                         className="bg-[#0f121d] border border-white/10 rounded-2xl p-5 hover:border-indigo-500/40 transition-all space-y-3"
                       >
-                        {/* Header da Cena */}
+                        {/* Header da Cena com Nome Real do Template HyperFrames */}
                         <div className="flex items-center justify-between border-b border-white/5 pb-2.5">
                           <div className="flex items-center gap-2.5">
                             <span className="px-2.5 py-1 rounded-lg bg-indigo-600/30 text-indigo-300 font-mono text-xs font-bold border border-indigo-500/30">
                               CENA {String(idx + 1).padStart(2, '0')}
                             </span>
-                            <span className="text-xs font-semibold text-gray-400">
-                              Componente: <span className="text-white">{scene.componentType || 'CardFrase'}</span>
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-base">{sceneTpl.previewIcon}</span>
+                              <span className="text-xs font-bold text-white">{sceneTpl.name}</span>
+                              <span
+                                className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-white/10 uppercase tracking-wider"
+                                style={{ color: sceneTpl.defaultHighlightColor }}
+                              >
+                                {sceneTpl.category}
+                              </span>
+                            </div>
                           </div>
-                          <span className="text-xs font-mono text-gray-400 bg-white/5 px-2 py-0.5 rounded-md">
+                          <span className="text-xs font-mono text-cyan-400 bg-cyan-950/60 border border-cyan-800/40 px-2.5 py-0.5 rounded-md">
                             ~{scene.durationSec.toFixed(1)}s
                           </span>
                         </div>
@@ -1428,6 +1446,7 @@ function CreatePageContent() {
             <HyperFramesLivePlayer
               compositionHtml={hyperframesHtml}
               aspectRatio={manifest.aspectRatio}
+              audioUrl={manifest.fullAudioUrl || manifest.scenes[0]?.audioUrl}
               isPlaying={isPlaying}
               currentTime={currentTime}
               onTimeUpdate={(t) => setCurrentTime(t)}

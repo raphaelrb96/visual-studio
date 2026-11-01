@@ -4,6 +4,7 @@ import { ScriptScene, WordTimestamp, SfxType, CameraMotionType, TransitionType }
 import { selectContextualBroll } from '@/lib/broll-library';
 import { getContextualMediaForScene } from '@/lib/curated-media';
 import { MotionTemplateId } from '@/lib/motion-templates';
+import { buildProceduralMotionScene } from '@/lib/scene-motion-generator';
 
 function buildWordTimestamps(text: string, durationSec: number): WordTimestamp[] {
   const words = text.trim().split(/\s+/).filter(Boolean);
@@ -165,13 +166,14 @@ DIRETRIZES FUNDAMENTAIS DE ROTEIRO & MOTION:
      * "ranking_top3": Pódio de melhores soluções #1, #2, #3.
      * "cta_pulse": Obrigatoriamente na última cena com botão animado de chamada para ação.
 
-3. PROMPT VISUAL HIPER-DETALHADO ("visualPrompt"):
-   - O campo "visualPrompt" NÃO DEVE SER GENÉRICO! Ele deve ser um roteiro técnico visual minucioso explicando exatamente o que o motor de renderização construirá nesta cena:
-     * Disposição dos elementos e posicionamento espacial no Canvas (posição de cards, badges, textos e gráficos).
-     * Efeitos visuais, iluminação volumétrica, sombras e vinhetas (ex: "fundo escuro profundo com glow neon ciano e vinheta 4K").
-     * Animações exatas de entrada e saída (ex: "entrada elástica com mola back.out(1.8) e zoom-in contínuo na câmera").
-     * Transições entre cenas (ex: "transição com flash branco e corte cinético de alta retenção").
-     * Movimentos secundários contínuos (ex: "flutuação contínua de partículas e oscilação suave do card central").
+3. PROMPT VISUAL CINEMATOGRÁFICO HIPER-DETALHADO ("visualPrompt") - A ALMA DA CENA:
+   - Este campo é a DIRETRIZ VISUAL COMPLETA que a IA de geração de código usará na etapa seguinte para desenhar o vídeo (Code to Video).
+   - NUNCA crie prompts curtos ou genéricos! Cada "visualPrompt" DEVE ter entre 3 a 6 linhas longas e minuciosas descrevendo:
+     * Arquitetura e Cenografia Visual: elementos vetoriais SVG, camadas em profundidade 3D (perspectiva 1200px), formas geométricas, cards de vidro com blur e reflexos.
+     * Paleta de Cores e Iluminação Volumétrica: contrastes fortes, luzes neon periféricas (glow ciano, dourado ou vermelho alerta), partículas suspensas e vinhetas cinematográficas.
+     * Elementos Gráficos Centrais: exatamente o que deve estar em cena (ex: medidor radial de 0 a 100%, pirâmide de camadas, gráfico de barras ascendente, selo metálico carimbado, arena de combate split-screen, cursor clicando com ripple de ondas).
+     * Coreografia de Animação e Movimento de Câmera: velocidade de entrada, curvas de aceleração com molas (back.out, elastic.out), rotações orbitais de retículas HUD secundárias e zoom contínuo de retenção (Ken Burns) ao longo dos segundos da cena.
+     * Efeitos de Áudio e Impacto (SFX): whoosh na entrada, impacto metálico ou clique digital.
 
 4. CAMPOS OBRIGATÓRIOS NO JSON DE CADA CENA:
    - "summary": Resumo limpo em 1 frase direta da narrativa da cena.
@@ -210,11 +212,11 @@ RETORNE APENAS JSON PURO NO SEGUINTE FORMATO:
 }
 `;
 
-    // 1. Tenta Gemini se configurado
+    // 1. Tenta Gemini com chave ativa (gemini-3.5-flash-lite com cota ativa)
     if (apiKey && apiKey !== 'YOUR_API_KEY') {
       try {
         const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+        const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash-lite' });
         const result = await model.generateContent(systemInstruction);
         const responseText = result.response
           .text()
@@ -233,10 +235,10 @@ RETORNE APENAS JSON PURO NO SEGUINTE FORMATO:
       }
     }
 
-    // 2. Tenta Pollinations OpenAI API se não houver Gemini configurado (com timeout estrito de 8.5s)
+    // 2. Tenta Pollinations OpenAI API se não houver Gemini configurado (com timeout estrito de 2.0s para resposta ultra-rápida)
     if (rawScenes.length === 0) {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8500);
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
       try {
         const aiRes = await fetch('https://text.pollinations.ai/openai', {
           method: 'POST',
@@ -264,7 +266,7 @@ RETORNE APENAS JSON PURO NO SEGUINTE FORMATO:
           }
         }
       } catch (pollErr) {
-        console.warn('Pollinations OpenAI fallback failed/timeout:', pollErr);
+        console.warn('Pollinations OpenAI fallback rápido acionado:', pollErr);
       } finally {
         clearTimeout(timeoutId);
       }
@@ -286,7 +288,7 @@ RETORNE APENAS JSON PURO NO SEGUINTE FORMATO:
 
     const fullAudioUrl = `/api/tts?text=${encodeURIComponent(fullNarrationText.slice(0, 1500))}&voice=${encodeURIComponent(voiceId)}`;
 
-    // Enriquece cada cena ligando com os dados do template, componente visual e b-rolls
+    // Enriquece cada cena ligando com os dados do template, componente visual, b-rolls e código motion pré-compilado
     const enrichedScenes: ScriptScene[] = rawScenes.map((sc, idx) => {
       const cleanText = sc.text || 'Descubra como transformar seus resultados hoje mesmo com automação.';
       const durationSec = estimateSpeechDuration(cleanText);
@@ -296,17 +298,49 @@ RETORNE APENAS JSON PURO NO SEGUINTE FORMATO:
 
       const templateResolved = normalizeTemplateId(sc.templateId || sc.componentType, chosenTemplate);
 
+      // Compila imediatamente o código HTML5/SVG + GSAP 3 para que o vídeo já nasça 100% animado e pronto
+      const procedural = buildProceduralMotionScene({
+        scene: {
+          brollImageUrl: finalImage,
+          componentProps: {
+            headline: sc.headline || cleanText.slice(0, 42).toUpperCase(),
+            subtext: sc.subText || '',
+            highlightWords: [sc.highlightWord || 'DESTAQUE'],
+            number: parseInt(String(sc.statValue || '84').replace(/\D/g, ''), 10) || 84,
+            suffix: String(sc.statValue || '%').replace(/[0-9]/g, '') || '%',
+            label: sc.statLabel || 'Taxa de Retenção',
+            bars: sc.barsData,
+            leftTitle: sc.versusData?.leftTitle,
+            rightTitle: sc.versusData?.rightTitle,
+            buttonText: sc.ctaText,
+          },
+        },
+        sceneIndex: idx,
+        resolvedTemplate: templateResolved,
+        visualPrompt: sc.visualPrompt || '',
+        headline: sc.headline || cleanText.slice(0, 42).toUpperCase(),
+        subText: sc.subText || '',
+        tag: sc.tag || 'DESTAQUE',
+        text: cleanText,
+        duration: durationSec,
+        highlightColor: '#facc15',
+        primaryTextColor: '#ffffff',
+      });
+
       return {
         id: `scene-${idx + 1}-${Date.now()}`,
         sceneIndex: idx,
         summary: sc.summary || `Cena #${idx + 1}: ${cleanText.slice(0, 50)}...`,
         visualPrompt:
           sc.visualPrompt ||
-          `Animação com layout "${templateResolved}", tipografia cinética sincronizada e iluminação contrastante.`,
+          `Composição dinâmica em Canvas 9:16 com layout "${templateResolved}". Tipografia cinética com iluminação neon volumétrica e zoom contínuo de retenção de 1.15x.`,
         text: cleanText,
         durationSec,
         templateId: templateResolved,
         componentType: templateResolved,
+        // Deixa vazio para ser compilado pela IA a partir do visualPrompt na etapa seguinte
+        compiledCustomHtml: '',
+        compiledGsapScript: '',
         componentProps: {
           badge: sc.tag || sc.componentProps?.badge || 'RETENÇÃO',
           headline: sc.headline || sc.componentProps?.headline || cleanText.slice(0, 42).toUpperCase(),
@@ -365,7 +399,7 @@ RETORNE APENAS JSON PURO NO SEGUINTE FORMATO:
 function buildDynamicHyperframeScenes(prompt: string, styleMode: string, targetCount = 5): any[] {
   const cleanTopic = prompt.trim().replace(/\.$/, '');
   const words = cleanTopic.split(/\s+/);
-  const shortSubject = words.slice(0, 5).join(' ');
+  const hookWords = words.slice(0, Math.min(3, words.length)).join(' ').toUpperCase();
 
   // Mapeia templates recomendados para cada momento da narrativa respeitando a escolha do usuário
   const scenes: any[] = [];
@@ -374,12 +408,12 @@ function buildDynamicHyperframeScenes(prompt: string, styleMode: string, targetC
   scenes.push({
     templateId: styleMode.includes('alerta') ? 'alerta_urgente' : styleMode.includes('pergunta') ? 'pergunta_provocativa' : styleMode.includes('news') ? 'news_headline' : 'hormozi_bold',
     tag: 'ATENÇÃO',
-    headline: `${cleanTopic.toUpperCase().slice(0, 42)}`,
-    subText: 'A virada que os maiores líderes já aplicam em segredo',
-    highlightWord: 'VIRADA',
-    text: `Preste muita atenção: uma virada silenciosa acabou de transformar tudo sobre ${shortSubject} no mercado.`,
+    headline: hookWords || 'ALERTA MÁXIMO',
+    subText: 'Preste muita atenção nesta revelação',
+    highlightWord: words[0] || 'ALERTA',
+    text: `Preste muita atenção: uma virada silenciosa acabou de transformar tudo sobre ${words.slice(0, 4).join(' ')} no mercado.`,
     summary: 'Gancho magnético de retenção alertando sobre a transformação do mercado.',
-    visualPrompt: `Composição central de choque com tipografia cinética pesada na cor de destaque neon, alinhada a 48% do topo do Canvas 9:16. Fundo com vinheta escura profunda e glow volumétrico pulsando. O card central entra com mola elástica GSAP back.out(1.8) no segundo 0.1s, acompanhado de flash branco e movimento contínuo Ken Burns de 1.15x de zoom durante a cena.`,
+    visualPrompt: `Composição 3D de choque com tipografia pesada em neon amarelo, acompanhado de retícula holográfica giratória e laser horizontal.`,
   });
 
   // Cena 2: O Problema Oculto ou Estatística Chocante
