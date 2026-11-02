@@ -64,6 +64,37 @@ export interface ScriptScene {
   [key: string]: any;
 }
 
+export interface TrackClip {
+  id: string;
+  trackId: string;
+  name: string;
+  startSec: number;
+  durationSec: number;
+  type: 'motion' | 'media' | 'subtitle' | 'audio' | 'overlay' | 'sfx' | 'sticker' | 'effect';
+  content?: string;
+  url?: string;
+  templateId?: string;
+  componentProps?: Record<string, any>;
+  customHtml?: string;
+  customGsap?: string;
+  color?: string;
+  isMuted?: boolean;
+  isLocked?: boolean;
+  [key: string]: any;
+}
+
+export interface TimelineTrack {
+  id: string;
+  name: string;
+  type: 'motion' | 'media' | 'subtitle' | 'audio' | 'overlay' | 'sfx' | 'sticker' | 'effect' | 'custom';
+  color?: string;
+  icon?: string;
+  isLocked?: boolean;
+  isMuted?: boolean;
+  isSolo?: boolean;
+  clips: TrackClip[];
+}
+
 export interface VideoProject {
   id: string;
   userId: string;
@@ -76,6 +107,8 @@ export interface VideoProject {
   aspectRatio: AspectRatio;
   presetId?: string;
   scenes: ScriptScene[];
+  // Pistas infinitas e irrestritas NLE
+  tracks?: TimelineTrack[];
   audio: {
     voiceTone?: 'energetic' | 'deep' | 'calm' | 'authoritative';
     ttsVoiceId?: string;

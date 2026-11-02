@@ -35,19 +35,26 @@ export async function POST(req: NextRequest) {
     const systemInstruction = `Você é um Diretor de Arte Sênior de Motion Graphics (estilo Vox, MagnatesMedia e Alex Hormozi) e Engenheiro de Video-as-Code (GSAP / Revideo / SVG).
 Sua missão é criar o Blueprint completo de um vídeo altamente profissional sobre o tema enviado pelo usuário, dividido em exatamente ${sceneCount} cenas.
 
-REGRAS OBRIGATÓRIAS E INEGOCIÁVEIS:
-1. NUNCA gere prompts curtos ou genéricos. O campo "motionPrompt" de CADA cena é a essência técnica que será compilada em código de vídeo. Ele DEVE ter entre 80 e 140 palavras por cena, especificando detalhadamente:
-   - [0.0s - 0.8s ENTRADA]: Posição inicial (x, y, scale, rotation), curva de easing GSAP (ex: elastic.out(1, 0.5), power4.out), entrada das camadas B-Roll e disparo do SFX.
-   - [0.8s - 3.5s COREOGRAFIA & ELEMENTOS]: Como cada palavra da locução salta na tela (sincronia word-by-word), animações de elementos gráficos (gráficos SVG, contadores numéricos, cards glassmorphic, setas vetoriais, partículas de fundo, barras de destaque estilo documentário).
-   - [3.5s - FIM CLÍMAX]: Movimento de câmera 2.5D (Ken Burns zoom/pan), pulso luminoso na palavra-chave e transição de saída.
-2. Escolha para cada cena um "templateId" diferente e perfeitamente adequado ao conteúdo daquela cena dentre esta lista:
-   ${validTemplateIds.join(', ')}
-   - Cena 1 deve ser um gancho explosivo (ex: hormozi_bold, alerta_urgente, pergunta_provocativa ou segredo_revelado).
-   - Cenas do meio devem variar entre dados, provas sociais e explicações visuais (ex: stat_counter, grafico_barras, versus_comparison, news_headline, tweet_card, timeline_progress, lista_passos, split_collage, chat_simulation, quote_autoridade).
-   - A última cena deve ser uma conclusão ou chamada para ação forte (ex: cta_pulse, minimal_luxury ou ranking_top3).
-3. O campo "visualPrompt" deve ser em INGLÊS, descrevendo uma fotografia cinematográfica 8k hiper-realista e específica sobre o assunto daquela cena (sem texto na imagem).
-4. O campo "searchKeywords" deve conter 2 ou 3 palavras em INGLÊS sobre o objeto concreto da cena para busca fotográfica.
-5. Preencha os dados ricos ("statValue", "statLabel", "barsData", "versusData", "stepsData", "headline", "subText") com informações REAIS e inteligentes sobre o tema "${prompt}".
+DIRETRIZES DE DIREÇÃO DE ARTE & TEMPLATES POR CENA:
+Você deve associar a cada cena o "templateId" ideal dentre os modelos disponíveis na nossa biblioteca:
+1. CENA 0 (GANCHO / HOOK):
+   - Use templates da categoria "opening" como: 'spotlight-hero-card' (foco heroico em holofote dramático), 'crane-rise-reveal' (subida em grua), 'letterspace-materialize' ou 'assemble-then-type-flyin' (esqueleto montando e texto 3D).
+2. CENAS INTERMEDIÁRIAS (ARGUMENTO, DADOS E DEMONSTRAÇÃO):
+   - Para enumeração de conceitos ou múltiplos recursos: use 'card-stack' (leque dinâmico de cards 3D) ou 'flying-words' (túnel de palavras em velocidade).
+   - Para métricas e dados de autoridade: use 'stat_counter' (contador neon), 'chart-live-moves' (gráficos vivos) ou 'gauge-readout-moves' (velocímetro).
+   - Para comparações: use 'versus_comparison' ou 'before-after-slider-scrub' (antes e depois).
+3. CENA FINAL (CONCLUSÃO & CTA):
+   - Use 'ui-strip-away-outro' (desmonte minimalista para o CTA), 'cta_pulse' ou 'logo-shrink-wordmark-lockup'.
+
+REGRAS OBRIGATÓRIAS:
+1. O campo "motionPrompt" de CADA cena DEVE ter entre 60 e 100 palavras especificando a coreografia:
+   - [0.0s - 0.8s]: Entrada dos elementos e easing GSAP.
+   - [0.8s - 3.5s]: Movimento tipográfico e animação de ícones/cards.
+   - [3.5s - FIM]: Câmera 2.5D e transição.
+2. O campo "templateId" de cada cena deve ser escolhido criteriosamente dentre:
+   ${validTemplateIds.slice(0, 30).join(', ')}, etc.
+3. O campo "visualPrompt" deve ser em INGLÊS, descrevendo uma fotografia cinematográfica 8k hiper-realista e específica para aquela cena.
+4. Preencha os dados ricos ("statValue", "statLabel", "headline", "subText", "tag") com dados persuasivos sobre "${prompt}".
 
 Retorne ESTRITAMENTE um JSON válido no seguinte formato:
 {

@@ -4,7 +4,9 @@ import {
   ScriptScene, 
   AspectRatio, 
   RenderJob,
-  JobStatus 
+  JobStatus,
+  TimelineTrack,
+  TrackClip
 } from '@/types/studio';
 import { TimelineElement } from '@/types/timeline-elements';
 import { DEFAULT_STYLE_PRESETS } from '@/lib/presets';
@@ -39,6 +41,15 @@ interface StudioState {
   setCurrentJob: (job: RenderJob | null) => void;
   updateJobProgress: (progress: number, message: string, status?: JobStatus) => void;
   getTotalDuration: () => number;
+
+  // Gerenciamento de Pistas Infinitas Livres
+  addTrack: (trackType?: TimelineTrack['type'], name?: string) => string;
+  removeTrack: (trackId: string) => void;
+  reorderTracks: (startIndex: number, endIndex: number) => void;
+  addClipToTrack: (trackId: string, clip: Omit<TrackClip, 'id' | 'trackId'>) => string;
+  updateClip: (clipId: string, updates: Partial<TrackClip>) => void;
+  removeClip: (clipId: string) => void;
+  moveClip: (clipId: string, targetTrackId: string, newStartSec: number) => void;
 }
 
 const DEFAULT_SCENES: ScriptScene[] = [
@@ -46,8 +57,9 @@ const DEFAULT_SCENES: ScriptScene[] = [
     id: 'sc-1',
     sceneIndex: 0,
     text: 'Quase ninguém te conta isso, mas 90 por cento dos negócios perdem vendas todos os dias por não postarem vídeos.',
-    durationSec: 4.5,
-    componentType: 'CardFrase',
+    durationSec: 5.0,
+    templateId: 'assemble-then-type-flyin',
+    componentType: 'assemble-then-type-flyin' as any,
     audioUrl: '/api/tts?text=Quase%20ningu%C3%A9m%20te%20conta%20isso%2C%20mas%2090%20por%20cento%20dos%20neg%C3%B3cios%20perdem%20vendas%20todos%20os%20dias%20por%20n%C3%A3o%20postarem%20v%C3%ADdeos.&lang=pt-BR',
     brollImageUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1080&q=85',
     sfxType: 'impact',
@@ -55,38 +67,41 @@ const DEFAULT_SCENES: ScriptScene[] = [
       headline: '90% PERDEM VENDAS DIARIAMENTE',
       subtext: 'O poder da retenção automática nas redes sociais',
       highlightWords: ['90%', 'vendas', 'vídeos'],
-      badge: 'SEGREDO DO MERCADO',
+      badge: 'MOTION STUDIO',
     },
   },
   {
     id: 'sc-2',
     sceneIndex: 1,
     text: 'Mais de 84 por cento do tráfego digital atual é dominado pelo consumo de vídeos curtos verticais.',
-    durationSec: 4.2,
-    componentType: 'StatCounter',
+    durationSec: 4.5,
+    templateId: 'flying-words',
+    componentType: 'flying-words' as any,
     audioUrl: '/api/tts?text=Mais%20de%2084%20por%20cento%20do%20tr%C3%A1fego%20digital%20atual%20%C3%A9%20dominado%20pelo%20consumo%20de%20v%C3%ADdeos%20curtos%20verticais.&lang=pt-BR',
     brollImageUrl: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1080&q=85',
     sfxType: 'whoosh',
     componentProps: {
+      headline: '84% DO TRÁFEGO É VERTICAL',
+      subtext: 'Reels, Shorts e TikTok geram 3.5x mais conversão',
       number: 84,
       suffix: '%',
       prefix: '+',
       label: 'Atenção no Formato Vertical',
-      description: 'Reels, Shorts e TikTok geram 3.5x mais conversão',
     },
   },
   {
     id: 'sc-3',
     sceneIndex: 2,
     text: 'Com o nosso gerador automático, você transforma uma simples frase em um vídeo profissional em segundos.',
-    durationSec: 4.4,
-    componentType: 'MediaBroll',
+    durationSec: 4.5,
+    templateId: 'card-stack',
+    componentType: 'card-stack' as any,
     audioUrl: '/api/tts?text=Com%20o%20nosso%20gerador%20autom%C3%A1tico%2C%20voc%C3%AA%20transforma%20uma%20simples%20frase%20em%20um%20v%C3%ADdeo%20profissional%20em%20segundos.&lang=pt-BR',
     brollImageUrl: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1080&q=85',
     sfxType: 'pop',
     componentProps: {
-      overlayText: 'PRONTO EM MENOS DE 60 SEGUNDOS',
-      caption: 'Voz neural + Legendas dinâmicas + B-Roll HD',
+      headline: 'PRONTO EM SEGUNDOS',
+      subtext: 'Voz neural + Legendas dinâmicas + B-Roll HD',
       imageUrl: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1080&q=85',
     },
   },
@@ -94,14 +109,16 @@ const DEFAULT_SCENES: ScriptScene[] = [
     id: 'sc-4',
     sceneIndex: 3,
     text: 'Digite o seu tema ao lado, clique em gerar vídeo e baixe seu arquivo pronto para postar.',
-    durationSec: 4.0,
-    componentType: 'CTAButton',
+    durationSec: 4.5,
+    templateId: 'spotlight-hero-card',
+    componentType: 'spotlight-hero-card' as any,
     audioUrl: '/api/tts?text=Digite%20o%20seu%20tema%20ao%20lado%2C%20clique%20em%20gerar%20v%C3%ADdeo%20e%20baixe%20seu%20arquivo%20pronto%20para%20postar.&lang=pt-BR',
     brollImageUrl: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1080&q=85',
     sfxType: 'rise',
     componentProps: {
+      headline: 'GERE SEU VÍDEO AGORA',
+      subtext: '100% automático e sem edição manual',
       buttonText: 'Gerar Meu Vídeo Agora',
-      subcaption: '100% automático e sem edição manual',
       accentColor: '#eab308',
     },
   },
@@ -347,6 +364,170 @@ export const useStudioStore = create<StudioState>((set, get) => ({
 
   getTotalDuration: () => {
     const { manifest } = get();
+    // Se houver pistas customizadas, a duração total é o maior endSec de qualquer clipe
+    if (manifest.tracks && manifest.tracks.length > 0) {
+      let maxEnd = 0;
+      manifest.tracks.forEach((tr) => {
+        tr.clips.forEach((c) => {
+          const end = (c.startSec || 0) + (c.durationSec || 0);
+          if (end > maxEnd) maxEnd = end;
+        });
+      });
+      if (maxEnd > 0) return Number(maxEnd.toFixed(2));
+    }
     return manifest.scenes.reduce((acc: number, sc: ScriptScene) => acc + (sc.durationSec || 0), 0);
+  },
+
+  addTrack: (trackType = 'motion', name) => {
+    const { manifest } = get();
+    const tracks = manifest.tracks ? [...manifest.tracks] : [];
+    const count = tracks.filter((t) => t.type === trackType).length + 1;
+    const defaultName = name || `${trackType.toUpperCase()} ${count}`;
+    const newId = `track-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    
+    const newTrack: TimelineTrack = {
+      id: newId,
+      name: defaultName,
+      type: trackType,
+      clips: [],
+    };
+
+    set({
+      manifest: {
+        ...manifest,
+        tracks: [...tracks, newTrack],
+      },
+    });
+
+    return newId;
+  },
+
+  removeTrack: (trackId: string) => {
+    const { manifest } = get();
+    if (!manifest.tracks) return;
+    set({
+      manifest: {
+        ...manifest,
+        tracks: manifest.tracks.filter((t) => t.id !== trackId),
+      },
+    });
+  },
+
+  reorderTracks: (startIndex: number, endIndex: number) => {
+    const { manifest } = get();
+    if (!manifest.tracks) return;
+    const result = Array.from(manifest.tracks);
+    const [removed] = result.splice(startIndex, 1);
+    if (!removed) return;
+    result.splice(endIndex, 0, removed);
+    set({
+      manifest: {
+        ...manifest,
+        tracks: result,
+      },
+    });
+  },
+
+  addClipToTrack: (trackId: string, clipData: Omit<TrackClip, 'id' | 'trackId'>) => {
+    const { manifest } = get();
+    const tracks = manifest.tracks ? [...manifest.tracks] : [];
+    const clipId = `clip-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    
+    const newClip: TrackClip = {
+      name: clipData.name || 'Novo Clipe',
+      type: clipData.type || 'motion',
+      startSec: typeof clipData.startSec === 'number' ? clipData.startSec : 0,
+      durationSec: typeof clipData.durationSec === 'number' ? clipData.durationSec : 4,
+      ...clipData,
+      id: clipId,
+      trackId,
+    };
+
+    const updated = tracks.map((tr) => {
+      if (tr.id === trackId) {
+        return {
+          ...tr,
+          clips: [...tr.clips, newClip],
+        };
+      }
+      return tr;
+    });
+
+    set({
+      manifest: {
+        ...manifest,
+        tracks: updated,
+      },
+    });
+
+    return clipId;
+  },
+
+  updateClip: (clipId: string, updates: Partial<TrackClip>) => {
+    const { manifest } = get();
+    if (!manifest.tracks) return;
+
+    const updated = manifest.tracks.map((tr) => ({
+      ...tr,
+      clips: tr.clips.map((c) => (c.id === clipId ? { ...c, ...updates } : c)),
+    }));
+
+    set({
+      manifest: {
+        ...manifest,
+        tracks: updated,
+      },
+    });
+  },
+
+  removeClip: (clipId: string) => {
+    const { manifest } = get();
+    if (!manifest.tracks) return;
+
+    const updated = manifest.tracks.map((tr) => ({
+      ...tr,
+      clips: tr.clips.filter((c) => c.id !== clipId),
+    }));
+
+    set({
+      manifest: {
+        ...manifest,
+        tracks: updated,
+      },
+    });
+  },
+
+  moveClip: (clipId: string, targetTrackId: string, newStartSec: number) => {
+    const { manifest } = get();
+    if (!manifest.tracks) return;
+
+    let targetClip: TrackClip | null = null;
+
+    // Remove clipe da faixa de origem
+    const withoutClip = manifest.tracks.map((tr) => {
+      const found = tr.clips.find((c) => c.id === clipId);
+      if (found) {
+        targetClip = { ...found, trackId: targetTrackId, startSec: Math.max(0, newStartSec) };
+        return { ...tr, clips: tr.clips.filter((c) => c.id !== clipId) };
+      }
+      return tr;
+    });
+
+    if (!targetClip) return;
+
+    // Adiciona na faixa de destino
+    const withClip = withoutClip.map((tr) => {
+      if (tr.id === targetTrackId) {
+        return { ...tr, clips: [...tr.clips, targetClip!] };
+      }
+      return tr;
+    });
+
+    set({
+      manifest: {
+        ...manifest,
+        tracks: withClip,
+      },
+    });
   },
 }));

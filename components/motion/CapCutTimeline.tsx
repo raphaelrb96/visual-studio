@@ -2,7 +2,7 @@
 
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { useStudioStore } from '@/lib/store/useStudioStore';
-import { ScriptScene } from '@/types/studio';
+import { TimelineTrack, TrackClip } from '@/types/studio';
 import {
   Play,
   Pause,
@@ -20,6 +20,14 @@ import {
   GripVertical,
   Layers,
   Sparkles,
+  Music,
+  Type,
+  Video,
+  Eye,
+  EyeOff,
+  Lock,
+  Unlock,
+  VolumeX,
 } from 'lucide-react';
 
 interface CapCutTimelineProps {
@@ -33,30 +41,35 @@ export const CapCutTimeline: React.FC<CapCutTimelineProps> = ({ className = '' }
     currentTime,
     selectedSceneId,
     selectedElementId,
-    selectedElementType,
     setCurrentTime,
     setIsPlaying,
     getTotalDuration,
     selectScene,
     selectElement,
-    addScene,
-    removeScene,
+    addTrack,
+    removeTrack,
+    addClipToTrack,
+    updateClip,
+    removeClip,
+    moveClip,
     updateScene,
-    setScenes,
   } = useStudioStore();
 
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
+
+  // Drag livre de clipe (mudança de tempo e de faixa)
   const [draggedClip, setDraggedClip] = useState<{
-    sceneId: string;
-    trackType: 'motion' | 'media' | 'subtitle' | 'audio';
+    clipId: string;
+    sourceTrackId: string;
     startX: number;
     initialStartSec: number;
+    dur: number;
   } | null>(null);
 
+  // Resize / Trimming de borda de clipe
   const [isResizingClip, setIsResizingClip] = useState<{
-    sceneId: string;
-    trackType: 'motion' | 'media' | 'subtitle' | 'audio';
+    clipId: string;
     edge: 'start' | 'end';
     startX: number;
     initialDur: number;
@@ -66,19 +79,88 @@ export const CapCutTimeline: React.FC<CapCutTimelineProps> = ({ className = '' }
   const trackRef = useRef<HTMLDivElement>(null);
   const totalDuration = Math.max(1, getTotalDuration());
 
-  // Calcula os offsets acumulados padrão para cada cena
-  const sceneOffsets = useMemo(() => {
+  // Garante que o projeto tenha pistas infinitas inicializadas a partir das cenas existentes
+  const initializedTracks = useMemo<TimelineTrack[]>(() => {
+    if (manifest.tracks && manifest.tracks.length > 0) {
+      return manifest.tracks;
+    }
+
+    // Inicializa as faixas padrão se ainda não existirem no manifest
     let acc = 0;
-    const map: Record<string, { startSec: number; durationSec: number }> = {};
-    manifest.scenes.forEach((sc) => {
-      map[sc.id] = {
-        startSec: acc,
-        durationSec: sc.durationSec || 4.5,
-      };
-      acc += sc.durationSec || 4.5;
+    const motionClips: TrackClip[] = [];
+    const mediaClips: TrackClip[] = [];
+    const subClips: TrackClip[] = [];
+    const audioClips: TrackClip[] = [];
+
+    manifest.scenes.forEach((sc, idx) => {
+      const dur = sc.durationSec || 4.5;
+      const sceneStart = acc;
+      acc += dur;
+
+      const mStart = typeof sc.motionStartSec === 'number' ? sc.motionStartSec : sceneStart + 0.15;
+      const mDur = typeof sc.motionDurationSec === 'number' ? sc.motionDurationSec : dur - 0.3;
+
+      const medStart = typeof sc.mediaStartSec === 'number' ? sc.mediaStartSec : sceneStart;
+      const medDur = typeof sc.mediaDurationSec === 'number' ? sc.mediaDurationSec : dur + 0.2;
+
+      const sStart = typeof sc.subtitleStartSec === 'number' ? sc.subtitleStartSec : sceneStart + 0.15;
+      const sDur = typeof sc.subtitleDurationSec === 'number' ? sc.subtitleDurationSec : dur - 0.25;
+
+      const aStart = typeof sc.audioStartSec === 'number' ? sc.audioStartSec : sceneStart;
+      const aDur = typeof sc.audioDurationSec === 'number' ? sc.audioDurationSec : dur;
+
+      motionClips.push({
+        id: `3d-${sc.id}`,
+        trackId: 'track-motion-1',
+        name: `#${idx + 1} ${sc.templateId || 'Motion 3D'}`,
+        startSec: mStart,
+        durationSec: mDur,
+        type: 'motion',
+        templateId: sc.templateId,
+        color: '#06b6d4',
+      });
+
+      mediaClips.push({
+        id: `broll-${sc.id}`,
+        trackId: 'track-media-1',
+        name: `B-Roll #${idx + 1}`,
+        startSec: medStart,
+        durationSec: medDur,
+        type: 'media',
+        url: sc.brollImageUrl,
+        color: '#6366f1',
+      });
+
+      subClips.push({
+        id: `sub-${sc.id}`,
+        trackId: 'track-sub-1',
+        name: sc.text.slice(0, 24),
+        startSec: sStart,
+        durationSec: sDur,
+        type: 'subtitle',
+        content: sc.text,
+        color: '#f59e0b',
+      });
+
+      audioClips.push({
+        id: `aud-${sc.id}`,
+        trackId: 'track-audio-1',
+        name: `Áudio #${idx + 1} (${sc.sfxType || 'impact'})`,
+        startSec: aStart,
+        durationSec: aDur,
+        type: 'audio',
+        url: sc.audioUrl,
+        color: '#10b981',
+      });
     });
-    return map;
-  }, [manifest.scenes]);
+
+    return [
+      { id: 'track-motion-1', name: '3D Motion', type: 'motion', color: '#06b6d4', clips: motionClips },
+      { id: 'track-media-1', name: 'Mídia B-Roll', type: 'media', color: '#6366f1', clips: mediaClips },
+      { id: 'track-sub-1', name: 'Legendas Cinéticas', type: 'subtitle', color: '#f59e0b', clips: subClips },
+      { id: 'track-audio-1', name: 'Áudio Neural & SFX', type: 'audio', color: '#10b981', clips: audioClips },
+    ];
+  }, [manifest.tracks, manifest.scenes]);
 
   // Teclas de atalho NLE
   useEffect(() => {
@@ -102,9 +184,9 @@ export const CapCutTimeline: React.FC<CapCutTimelineProps> = ({ className = '' }
         e.preventDefault();
         store.setCurrentTime(Math.min(dur, store.currentTime + (e.shiftKey ? 1.0 : 0.2)));
       } else if (e.code === 'Delete' || e.code === 'Backspace') {
-        if (store.selectedSceneId && store.manifest.scenes.length > 1) {
+        if (store.selectedElementId) {
           e.preventDefault();
-          store.removeScene(store.selectedSceneId);
+          store.removeClip(store.selectedElementId);
         }
       }
     };
@@ -150,7 +232,7 @@ export const CapCutTimeline: React.FC<CapCutTimelineProps> = ({ className = '' }
     };
   }, [isScrubbing, handleScrubMove]);
 
-  // Arrastar clipe livremente no eixo do tempo (Horizontal Dragging)
+  // Arrastar clipe livremente no eixo do tempo (Horizontal Dragging sem restrição)
   useEffect(() => {
     if (!draggedClip || !trackRef.current) return;
 
@@ -159,17 +241,24 @@ export const CapCutTimeline: React.FC<CapCutTimelineProps> = ({ className = '' }
       const pixelsPerSecond = rect.width / totalDuration;
       const deltaX = e.clientX - draggedClip.startX;
       const deltaSec = deltaX / pixelsPerSecond;
-      const newStart = Math.max(0, Math.min(totalDuration - 1.0, Number((draggedClip.initialStartSec + deltaSec).toFixed(2))));
+      const newStartSec = Math.max(0, Number((draggedClip.initialStartSec + deltaSec).toFixed(2)));
 
-      if (draggedClip.trackType === 'motion') {
-        updateScene(draggedClip.sceneId, { motionStartSec: newStart });
-      } else if (draggedClip.trackType === 'media') {
-        updateScene(draggedClip.sceneId, { mediaStartSec: newStart });
-      } else if (draggedClip.trackType === 'subtitle') {
-        updateScene(draggedClip.sceneId, { subtitleStartSec: newStart });
-      } else if (draggedClip.trackType === 'audio') {
-        updateScene(draggedClip.sceneId, { audioStartSec: newStart });
+      const sceneId = draggedClip.clipId.replace(/^(3d|broll|sub|aud)-/, '');
+      const trackType = draggedClip.clipId.startsWith('3d')
+        ? 'motion'
+        : draggedClip.clipId.startsWith('broll')
+        ? 'media'
+        : draggedClip.clipId.startsWith('sub')
+        ? 'subtitle'
+        : 'audio';
+
+      if (manifest.tracks && manifest.tracks.length > 0) {
+        updateClip(draggedClip.clipId, { startSec: newStartSec });
       }
+      if (trackType === 'motion') updateScene(sceneId, { motionStartSec: newStartSec });
+      if (trackType === 'media') updateScene(sceneId, { mediaStartSec: newStartSec });
+      if (trackType === 'subtitle') updateScene(sceneId, { subtitleStartSec: newStartSec });
+      if (trackType === 'audio') updateScene(sceneId, { audioStartSec: newStartSec });
     };
 
     const onMouseUp = () => setDraggedClip(null);
@@ -180,9 +269,9 @@ export const CapCutTimeline: React.FC<CapCutTimelineProps> = ({ className = '' }
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
     };
-  }, [draggedClip, totalDuration, updateScene]);
+  }, [draggedClip, totalDuration, manifest.tracks, updateClip, updateScene]);
 
-  // Redimensionar clipe individualmente (Trimming por borda)
+  // Redimensionar / Trimming de duração individual com o mouse
   useEffect(() => {
     if (!isResizingClip || !trackRef.current) return;
 
@@ -193,16 +282,23 @@ export const CapCutTimeline: React.FC<CapCutTimelineProps> = ({ className = '' }
       const deltaSec = deltaX / pixelsPerSecond;
 
       if (isResizingClip.edge === 'end') {
-        const newDur = Math.max(0.8, Math.min(18.0, Number((isResizingClip.initialDur + deltaSec).toFixed(1))));
-        if (isResizingClip.trackType === 'motion') {
-          updateScene(isResizingClip.sceneId, { motionDurationSec: newDur });
-        } else if (isResizingClip.trackType === 'media') {
-          updateScene(isResizingClip.sceneId, { mediaDurationSec: newDur });
-        } else if (isResizingClip.trackType === 'subtitle') {
-          updateScene(isResizingClip.sceneId, { subtitleDurationSec: newDur });
-        } else if (isResizingClip.trackType === 'audio') {
-          updateScene(isResizingClip.sceneId, { audioDurationSec: newDur });
+        const newDur = Math.max(0.5, Number((isResizingClip.initialDur + deltaSec).toFixed(2)));
+        const sceneId = isResizingClip.clipId.replace(/^(3d|broll|sub|aud)-/, '');
+        const trackType = isResizingClip.clipId.startsWith('3d')
+          ? 'motion'
+          : isResizingClip.clipId.startsWith('broll')
+          ? 'media'
+          : isResizingClip.clipId.startsWith('sub')
+          ? 'subtitle'
+          : 'audio';
+
+        if (manifest.tracks && manifest.tracks.length > 0) {
+          updateClip(isResizingClip.clipId, { durationSec: newDur });
         }
+        if (trackType === 'motion') updateScene(sceneId, { motionDurationSec: newDur });
+        if (trackType === 'media') updateScene(sceneId, { mediaDurationSec: newDur });
+        if (trackType === 'subtitle') updateScene(sceneId, { subtitleDurationSec: newDur });
+        if (trackType === 'audio') updateScene(sceneId, { audioDurationSec: newDur });
       }
     };
 
@@ -214,65 +310,35 @@ export const CapCutTimeline: React.FC<CapCutTimelineProps> = ({ className = '' }
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
     };
-  }, [isResizingClip, totalDuration, updateScene]);
+  }, [isResizingClip, totalDuration, manifest.tracks, updateClip, updateScene]);
 
-  // Dividir cena ativa no playhead
-  const handleSplitActiveScene = () => {
-    const targetId = selectedSceneId || manifest.scenes[0]?.id;
-    const idx = manifest.scenes.findIndex((s) => s.id === targetId);
-    if (idx === -1) return;
-    const current = manifest.scenes[idx];
-
-    let accumulated = 0;
-    for (let i = 0; i < idx; i++) {
-      accumulated += manifest.scenes[i].durationSec;
+  // Ícone por tipo de pista
+  const getTrackIcon = (type: string) => {
+    switch (type) {
+      case 'motion':
+        return <Box className="w-3.5 h-3.5 text-cyan-400" />;
+      case 'media':
+        return <Film className="w-3.5 h-3.5 text-indigo-400" />;
+      case 'subtitle':
+        return <Subtitles className="w-3.5 h-3.5 text-amber-400" />;
+      case 'audio':
+        return <Volume2 className="w-3.5 h-3.5 text-emerald-400" />;
+      case 'sfx':
+        return <Music className="w-3.5 h-3.5 text-pink-400" />;
+      case 'sticker':
+      case 'overlay':
+        return <Sparkles className="w-3.5 h-3.5 text-purple-400" />;
+      default:
+        return <Layers className="w-3.5 h-3.5 text-slate-400" />;
     }
-    const relativeTime = currentTime - accumulated;
-    const splitPoint =
-      relativeTime > 1.0 && relativeTime < current.durationSec - 1.0
-        ? Number(relativeTime.toFixed(1))
-        : Number((current.durationSec / 2).toFixed(1));
-
-    if (current.durationSec < 2.0) {
-      alert('A cena selecionada é muito curta para ser dividida (mínimo 2.0s).');
-      return;
-    }
-
-    const firstDur = splitPoint;
-    const secondDur = Number((current.durationSec - splitPoint).toFixed(1));
-    const words = current.text.split(' ');
-    const halfWords = Math.max(1, Math.floor((words.length * (firstDur / current.durationSec))));
-
-    const updatedCurrent: ScriptScene = {
-      ...current,
-      durationSec: firstDur,
-      text: words.slice(0, halfWords).join(' ') || current.text,
-      compiledCustomHtml: undefined,
-      compiledGsapScript: undefined,
-    };
-
-    const clonedSecondHalf: ScriptScene = {
-      ...current,
-      id: `scene-split-${Date.now()}`,
-      sceneIndex: idx + 1,
-      durationSec: secondDur,
-      text: words.slice(halfWords).join(' ') || current.text,
-      compiledCustomHtml: undefined,
-      compiledGsapScript: undefined,
-    };
-
-    const nextScenes = [...manifest.scenes];
-    nextScenes.splice(idx, 1, updatedCurrent, clonedSecondHalf);
-    setScenes(nextScenes.map((s, i) => ({ ...s, sceneIndex: i })));
-    selectScene(clonedSecondHalf.id);
   };
 
   return (
-    <div className={`bg-[#0a0d18] border-t border-white/10 flex flex-col select-none p-3 ${className}`}>
-      {/* Barra de Ferramentas Superior da Timeline */}
-      <div className="flex items-center justify-between pb-2 border-b border-white/5">
+    <div className={`flex flex-col h-full bg-[#07090e] border-t border-white/10 select-none ${className}`}>
+      {/* BARRA SUPERIOR DE FERRAMENTAS NLE */}
+      <div className="h-12 border-b border-white/10 px-4 flex items-center justify-between bg-[#0b0e18] shrink-0">
+        {/* Controles de Reprodução */}
         <div className="flex items-center gap-2">
-          {/* Play / Pause Principal */}
           <button
             type="button"
             onClick={() => {
@@ -281,68 +347,68 @@ export const CapCutTimeline: React.FC<CapCutTimelineProps> = ({ className = '' }
               }
               setIsPlaying(!isPlaying);
             }}
-            className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all shadow-md ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs shadow-md transition-all ${
               isPlaying
-                ? 'bg-amber-500 hover:bg-amber-600 text-black'
-                : 'bg-emerald-500 hover:bg-emerald-600 text-white'
+                ? 'bg-amber-500 hover:bg-amber-600 text-black shadow-amber-500/20'
+                : 'bg-emerald-500 hover:bg-emerald-600 text-black shadow-emerald-500/20'
             }`}
           >
-            {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
-            <span>{isPlaying ? 'Pausar' : 'Play'}</span>
+            {isPlaying ? (
+              <>
+                <Pause className="w-3.5 h-3.5 fill-current" /> Pausar
+              </>
+            ) : (
+              <>
+                <Play className="w-3.5 h-3.5 fill-current" /> Play
+              </>
+            )}
           </button>
 
-          {/* Resetar para o Início */}
           <button
             type="button"
-            onClick={() => {
-              setIsPlaying(false);
-              setCurrentTime(0);
-            }}
-            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 transition-colors"
-            title="Voltar ao início (0s)"
+            onClick={() => setCurrentTime(0)}
+            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white transition-colors"
+            title="Voltar ao início"
           >
-            <RotateCcw className="w-4 h-4" />
+            <RotateCcw className="w-3.5 h-3.5" />
           </button>
 
+          {/* Adicionar Nova Pista Livre */}
           <div className="h-4 w-[1px] bg-white/10 mx-1" />
 
-          {/* Dividir Clipe */}
-          <button
-            type="button"
-            onClick={handleSplitActiveScene}
-            className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-cyan-300 text-xs font-semibold flex items-center gap-1 border border-cyan-500/20"
-            title="Dividir cena na agulha"
-          >
-            <Scissors className="w-3.5 h-3.5" />
-            <span>Dividir</span>
-          </button>
-
-          {/* Adicionar Cena */}
-          <button
-            type="button"
-            onClick={() => addScene()}
-            className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-emerald-300 text-xs font-semibold flex items-center gap-1 border border-emerald-500/20"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>+ Bloco</span>
-          </button>
-
-          {/* Excluir Cena */}
-          <button
-            type="button"
-            disabled={manifest.scenes.length <= 1}
-            onClick={() => selectedSceneId && removeScene(selectedSceneId)}
-            className="p-1.5 rounded-lg bg-white/5 hover:bg-rose-500/20 text-gray-400 hover:text-rose-400 transition-colors disabled:opacity-30"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => addTrack('motion', 'Motion Extra')}
+              className="px-2 py-1 bg-cyan-950/60 hover:bg-cyan-900/60 border border-cyan-800/40 text-cyan-300 rounded text-[11px] font-bold flex items-center gap-1 transition-colors"
+              title="Adicionar Pista de Motion"
+            >
+              <Plus className="w-3 h-3" /> + Pista Motion
+            </button>
+            <button
+              type="button"
+              onClick={() => addTrack('media', 'B-Roll Extra')}
+              className="px-2 py-1 bg-indigo-950/60 hover:bg-indigo-900/60 border border-indigo-800/40 text-indigo-300 rounded text-[11px] font-bold flex items-center gap-1 transition-colors"
+              title="Adicionar Pista de Mídia"
+            >
+              <Plus className="w-3 h-3" /> + Pista Mídia
+            </button>
+            <button
+              type="button"
+              onClick={() => addTrack('audio', 'SFX / Áudio')}
+              className="px-2 py-1 bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-800/40 text-emerald-300 rounded text-[11px] font-bold flex items-center gap-1 transition-colors"
+              title="Adicionar Pista de Áudio"
+            >
+              <Plus className="w-3 h-3" /> + Pista Áudio
+            </button>
+          </div>
         </div>
 
-        {/* Timecode Digital & Zoom */}
+        {/* Display de Tempo e Zoom */}
         <div className="flex items-center gap-3">
-          <div className="px-3 py-1 rounded-xl bg-black/60 border border-white/10 font-mono text-xs font-bold text-cyan-400 flex items-center gap-1">
-            <span>{currentTime.toFixed(2)}s</span>
-            <span className="text-gray-500">/</span>
+          <div className="px-2.5 py-1 rounded bg-black/60 border border-white/10 font-mono text-xs">
+            <span className="text-cyan-400 font-bold">{currentTime.toFixed(2)}s</span>
+            <span className="text-gray-500 mx-1">/</span>
             <span className="text-gray-400">{totalDuration.toFixed(2)}s</span>
           </div>
 
@@ -366,291 +432,141 @@ export const CapCutTimeline: React.FC<CapCutTimelineProps> = ({ className = '' }
         </div>
       </div>
 
-      {/* ÁREA MULTIPISTA COM LARGURA DINÂMICA */}
-      <div className="space-y-2 relative overflow-x-auto pb-1 mt-2">
-        <div style={{ width: `${zoomLevel * 100}%`, minWidth: '720px' }} className="space-y-2">
-          {/* Régua de Tempo */}
+      {/* ÁREA MULTIPISTA INFINITA NLE */}
+      <div className="flex-1 overflow-y-auto overflow-x-auto p-2 bg-[#05070e]">
+        <div style={{ width: `${zoomLevel * 100}%`, minWidth: '760px' }} className="space-y-1.5 pb-8">
+          {/* Régua de Tempo NLE */}
           <div className="flex items-center gap-2">
-            <span className="w-24 shrink-0 text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider text-right pr-2">
-              Régua
-            </span>
+            <div className="w-32 shrink-0 text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider text-right pr-2 flex items-center justify-between">
+              <span className="text-slate-400 text-[10px]">{initializedTracks.length} Faixas</span>
+              <span>Régua</span>
+            </div>
             <div
               onMouseDown={handleRulerMouseDown}
-              className="flex-1 h-6 flex items-center justify-between text-[10px] font-mono text-slate-400 px-2 border border-white/10 cursor-pointer bg-black/40 rounded-lg hover:border-slate-700 transition-colors"
+              className="flex-1 h-6 flex items-center justify-between text-[10px] font-mono text-slate-400 px-2 border border-white/10 cursor-pointer bg-black/40 rounded-lg hover:border-slate-700 transition-colors select-none"
             >
               <span>00:00s</span>
-              <span>{(totalDuration * 0.25).toFixed(1)}s</span>
-              <span>{(totalDuration * 0.5).toFixed(1)}s</span>
-              <span>{(totalDuration * 0.75).toFixed(1)}s</span>
+              <span>{(totalDuration * 0.2).toFixed(1)}s</span>
+              <span>{(totalDuration * 0.4).toFixed(1)}s</span>
+              <span>{(totalDuration * 0.6).toFixed(1)}s</span>
+              <span>{(totalDuration * 0.8).toFixed(1)}s</span>
               <span>{totalDuration.toFixed(1)}s</span>
             </div>
           </div>
 
-          {/* Container das Pistas */}
-          <div className="rounded-2xl bg-[#05070e] p-2.5 border border-white/10 shadow-inner">
-            <div className="flex gap-2">
-              {/* Rótulos Laterais das Faixas */}
-              <div className="w-24 shrink-0 space-y-2 select-none pt-0.5">
-                <div className="h-10 flex items-center text-[10px] font-bold text-cyan-400 uppercase tracking-wider gap-1">
-                  <Box className="w-3.5 h-3.5" /> 3D Motion
+          {/* Container das Faixas Livres */}
+          <div className="rounded-2xl bg-[#080b15] p-2 border border-white/10 shadow-inner space-y-2">
+            {initializedTracks.map((track, trackIdx) => (
+              <div key={track.id} className="flex gap-2 items-center group">
+                {/* Cabeçalho da Faixa */}
+                <div className="w-32 shrink-0 h-10 px-2 rounded-lg bg-black/40 border border-white/5 flex items-center justify-between text-[11px] font-bold select-none truncate">
+                  <div className="flex items-center gap-1.5 truncate">
+                    {getTrackIcon(track.type)}
+                    <span className="text-gray-200 truncate">{track.name}</span>
+                  </div>
+                  {initializedTracks.length > 2 && (
+                    <button
+                      type="button"
+                      onClick={() => removeTrack(track.id)}
+                      className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-rose-400 p-0.5 rounded transition-opacity"
+                      title="Excluir faixa"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
                 </div>
-                <div className="h-11 flex items-center text-[10px] font-bold text-indigo-400 uppercase tracking-wider gap-1">
-                  <Film className="w-3.5 h-3.5" /> Mídia B-Roll
-                </div>
-                <div className="h-8 flex items-center text-[10px] font-bold text-amber-400 uppercase tracking-wider gap-1">
-                  <Subtitles className="w-3.5 h-3.5" /> Legendas
-                </div>
-                <div className="h-8 flex items-center text-[10px] font-bold text-emerald-400 uppercase tracking-wider gap-1">
-                  <Volume2 className="w-3.5 h-3.5" /> Áudio Neural
-                </div>
-              </div>
 
-              {/* Área das 4 Pistas Livres */}
-              <div
-                ref={trackRef}
-                onMouseDown={handleScrubMouseDown}
-                className="flex-1 relative space-y-2 cursor-pointer"
-              >
-                {/* Agulha Playhead Vertical */}
+                {/* Área da Pista no Eixo do Tempo */}
                 <div
-                  className="absolute top-0 bottom-0 w-[2px] bg-rose-500 z-30 pointer-events-none shadow-[0_0_12px_rgba(244,63,94,1)]"
-                  style={{ left: `${Math.min(100, Math.max(0, (currentTime / totalDuration) * 100))}%` }}
+                  ref={trackIdx === 0 ? trackRef : undefined}
+                  onMouseDown={handleScrubMouseDown}
+                  className="flex-1 h-10 relative rounded-xl border border-white/5 bg-slate-950/80 cursor-pointer overflow-hidden"
                 >
-                  <div className="w-3.5 h-3.5 bg-rose-500 rounded-full -ml-[6px] -mt-1 border-2 border-white" />
-                </div>
+                  {/* Agulha Playhead Vertical */}
+                  <div
+                    className="absolute top-0 bottom-0 w-[2px] bg-rose-500 z-30 pointer-events-none shadow-[0_0_12px_rgba(244,63,94,1)]"
+                    style={{ left: `${Math.min(100, Math.max(0, (currentTime / totalDuration) * 100))}%` }}
+                  />
 
-                {/* PISTA 1: 3D MOTION LIVRE (POSIÇÃO & DURAÇÃO INDEPENDENTES) */}
-                <div className="h-10 relative rounded-xl overflow-hidden border border-cyan-500/20 bg-slate-950/80">
-                  {manifest.scenes.map((sc, idx) => {
-                    const fallback = sceneOffsets[sc.id] || { startSec: 0, durationSec: 4.5 };
-                    const startSec = typeof sc.motionStartSec === 'number' ? sc.motionStartSec : fallback.startSec;
-                    const dur = typeof sc.motionDurationSec === 'number' ? sc.motionDurationSec : fallback.durationSec;
+                  {/* Clipes Livres da Faixa */}
+                  {track.clips.map((clip) => {
+                    const startSec = clip.startSec || 0;
+                    const dur = clip.durationSec || 4;
                     const leftPct = (startSec / totalDuration) * 100;
                     const widthPct = (dur / totalDuration) * 100;
-                    const isSelected = selectedElementId === `3d-${sc.id}` || selectedSceneId === sc.id;
+                    const isSelected = selectedElementId === clip.id;
 
                     return (
                       <div
-                        key={`3d-${sc.id}`}
+                        key={clip.id}
                         onMouseDown={(e) => {
                           e.stopPropagation();
-                          selectElement(`3d-${sc.id}`, 'motion');
-                          selectScene(sc.id);
+                          selectElement(clip.id, clip.type);
                           setDraggedClip({
-                            sceneId: sc.id,
-                            trackType: 'motion',
+                            clipId: clip.id,
+                            sourceTrackId: track.id,
                             startX: e.clientX,
                             initialStartSec: startSec,
+                            dur,
                           });
                         }}
-                        className={`absolute top-0 bottom-0 rounded-lg px-2 flex items-center justify-between overflow-hidden cursor-grab active:cursor-grabbing border ${
+                        className={`absolute top-0.5 bottom-0.5 rounded-lg px-2 flex items-center justify-between overflow-hidden cursor-grab active:cursor-grabbing border select-none transition-shadow ${
                           isSelected
-                            ? 'bg-cyan-600/50 border-cyan-400 ring-2 ring-cyan-400 shadow-[0_0_16px_rgba(34,211,238,0.6)] z-20'
-                            : 'bg-cyan-950/60 border-cyan-500/30 hover:bg-cyan-900/60 z-10'
+                            ? 'ring-2 ring-white shadow-[0_0_16px_rgba(255,255,255,0.4)] z-20'
+                            : 'hover:brightness-125 z-10'
                         }`}
-                        style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
-                      >
-                        <div className="flex items-center gap-1.5 truncate">
-                          <GripVertical className="w-3 h-3 text-cyan-400/60 shrink-0" />
-                          <span className="text-[10px] font-mono font-bold text-cyan-200 truncate">
-                            #{idx + 1} {sc.templateId || 'Motion'}
-                          </span>
-                        </div>
-                        <span className="text-[9px] font-mono bg-black/60 px-1 rounded text-cyan-300">
-                          {dur.toFixed(1)}s
-                        </span>
-                        {/* Alça de Trimming */}
-                        <div
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            setIsResizingClip({
-                              sceneId: sc.id,
-                              trackType: 'motion',
-                              edge: 'end',
-                              startX: e.clientX,
-                              initialDur: dur,
-                              initialStartSec: startSec,
-                            });
-                          }}
-                          className="absolute right-0 top-0 bottom-0 w-2.5 hover:bg-cyan-400 cursor-ew-resize bg-cyan-500/30 flex items-center justify-center"
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* PISTA 2: B-ROLL MÍDIA LIVRE */}
-                <div className="h-11 relative rounded-xl overflow-hidden border border-indigo-500/20 bg-slate-950/80">
-                  {manifest.scenes.map((sc, idx) => {
-                    const fallback = sceneOffsets[sc.id] || { startSec: 0, durationSec: 4.5 };
-                    const startSec = typeof sc.mediaStartSec === 'number' ? sc.mediaStartSec : fallback.startSec;
-                    const dur = typeof sc.mediaDurationSec === 'number' ? sc.mediaDurationSec : fallback.durationSec;
-                    const leftPct = (startSec / totalDuration) * 100;
-                    const widthPct = (dur / totalDuration) * 100;
-                    const isSelected = selectedElementId === `broll-${sc.id}`;
-
-                    return (
-                      <div
-                        key={`broll-${sc.id}`}
-                        onMouseDown={(e) => {
-                          e.stopPropagation();
-                          selectElement(`broll-${sc.id}`, 'broll');
-                          selectScene(sc.id);
-                          setDraggedClip({
-                            sceneId: sc.id,
-                            trackType: 'media',
-                            startX: e.clientX,
-                            initialStartSec: startSec,
-                          });
+                        style={{
+                          left: `${leftPct}%`,
+                          width: `${widthPct}%`,
+                          backgroundColor:
+                            clip.type === 'motion'
+                              ? 'rgba(6, 182, 212, 0.45)'
+                              : clip.type === 'media'
+                              ? 'rgba(99, 102, 241, 0.45)'
+                              : clip.type === 'subtitle'
+                              ? 'rgba(245, 158, 11, 0.45)'
+                              : 'rgba(16, 185, 129, 0.45)',
+                          borderColor: clip.color || '#38bdf8',
                         }}
-                        className={`absolute top-0 bottom-0 rounded-lg p-1.5 flex items-center justify-between overflow-hidden cursor-grab active:cursor-grabbing border ${
-                          isSelected
-                            ? 'bg-indigo-600/50 border-indigo-400 ring-2 ring-indigo-400 shadow-[0_0_16px_rgba(129,140,248,0.6)] z-20'
-                            : 'bg-indigo-950/60 border-indigo-500/30 hover:bg-indigo-900/60 z-10'
-                        }`}
-                        style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
                       >
-                        {sc.brollImageUrl && (
+                        {/* Imagem de Fundo se for mídia */}
+                        {clip.type === 'media' && clip.url && (
                           <img
-                            src={sc.brollImageUrl}
+                            src={clip.url}
                             alt=""
-                            className="absolute inset-0 w-full h-full object-cover opacity-30 pointer-events-none"
+                            className="absolute inset-0 w-full h-full object-cover opacity-25 pointer-events-none"
                           />
                         )}
-                        <div className="relative z-10 truncate">
-                          <span className="text-[10px] font-mono text-white font-bold block truncate">
-                            Mídia #{idx + 1}
-                          </span>
+
+                        <div className="flex items-center gap-1 truncate relative z-10">
+                          <GripVertical className="w-3 h-3 text-white/50 shrink-0" />
+                          <span className="text-[10px] font-mono font-bold text-white truncate">{clip.name}</span>
                         </div>
-                        <span className="relative z-10 text-[9px] font-mono bg-black/60 px-1 rounded text-indigo-300">
+
+                        <span className="text-[9px] font-mono bg-black/60 px-1 rounded text-white/80 relative z-10">
                           {dur.toFixed(1)}s
                         </span>
-                        {/* Alça de Trimming */}
+
+                        {/* Alça de Trimming na Borda Direita */}
                         <div
                           onMouseDown={(e) => {
                             e.stopPropagation();
                             setIsResizingClip({
-                              sceneId: sc.id,
-                              trackType: 'media',
+                              clipId: clip.id,
                               edge: 'end',
                               startX: e.clientX,
                               initialDur: dur,
                               initialStartSec: startSec,
                             });
                           }}
-                          className="absolute right-0 top-0 bottom-0 w-2.5 hover:bg-indigo-400 cursor-ew-resize bg-indigo-500/30 flex items-center justify-center"
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* PISTA 3: LEGENDAS LIVRES */}
-                <div className="h-8 relative rounded-xl overflow-hidden border border-amber-500/20 bg-slate-950/80">
-                  {manifest.scenes.map((sc, idx) => {
-                    const fallback = sceneOffsets[sc.id] || { startSec: 0, durationSec: 4.5 };
-                    const startSec = typeof sc.subtitleStartSec === 'number' ? sc.subtitleStartSec : fallback.startSec;
-                    const dur = typeof sc.subtitleDurationSec === 'number' ? sc.subtitleDurationSec : fallback.durationSec;
-                    const leftPct = (startSec / totalDuration) * 100;
-                    const widthPct = (dur / totalDuration) * 100;
-                    const isSelected = selectedElementId === `sub-${sc.id}`;
-
-                    return (
-                      <div
-                        key={`sub-${sc.id}`}
-                        onMouseDown={(e) => {
-                          e.stopPropagation();
-                          selectElement(`sub-${sc.id}`, 'subtitle');
-                          selectScene(sc.id);
-                          setDraggedClip({
-                            sceneId: sc.id,
-                            trackType: 'subtitle',
-                            startX: e.clientX,
-                            initialStartSec: startSec,
-                          });
-                        }}
-                        className={`absolute top-0 bottom-0 rounded-lg px-2 flex items-center justify-between text-[10px] font-bold truncate cursor-grab active:cursor-grabbing border ${
-                          isSelected
-                            ? 'bg-amber-500/50 text-amber-200 border-amber-300 ring-2 ring-amber-300 shadow-[0_0_12px_rgba(251,191,36,0.6)] z-20'
-                            : 'bg-amber-950/60 text-amber-300 border-amber-500/30 hover:bg-amber-900/60 z-10'
-                        }`}
-                        style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
-                      >
-                        <span className="truncate">&ldquo;{sc.text.slice(0, 24)}...&rdquo;</span>
-                        {/* Alça de Trimming */}
-                        <div
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            setIsResizingClip({
-                              sceneId: sc.id,
-                              trackType: 'subtitle',
-                              edge: 'end',
-                              startX: e.clientX,
-                              initialDur: dur,
-                              initialStartSec: startSec,
-                            });
-                          }}
-                          className="absolute right-0 top-0 bottom-0 w-2.5 hover:bg-amber-400 cursor-ew-resize bg-amber-500/30 flex items-center justify-center"
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* PISTA 4: ÁUDIO NEURAL & SFX LIVRES */}
-                <div className="h-8 relative rounded-xl overflow-hidden border border-emerald-500/20 bg-slate-950/80">
-                  {manifest.scenes.map((sc, idx) => {
-                    const fallback = sceneOffsets[sc.id] || { startSec: 0, durationSec: 4.5 };
-                    const startSec = typeof sc.audioStartSec === 'number' ? sc.audioStartSec : fallback.startSec;
-                    const dur = typeof sc.audioDurationSec === 'number' ? sc.audioDurationSec : fallback.durationSec;
-                    const leftPct = (startSec / totalDuration) * 100;
-                    const widthPct = (dur / totalDuration) * 100;
-                    const isSelected = selectedElementId === `aud-${sc.id}`;
-
-                    return (
-                      <div
-                        key={`aud-${sc.id}`}
-                        onMouseDown={(e) => {
-                          e.stopPropagation();
-                          selectElement(`aud-${sc.id}`, 'audio');
-                          selectScene(sc.id);
-                          setDraggedClip({
-                            sceneId: sc.id,
-                            trackType: 'audio',
-                            startX: e.clientX,
-                            initialStartSec: startSec,
-                          });
-                        }}
-                        className={`absolute top-0 bottom-0 rounded-lg px-2 flex items-center justify-between text-[10px] font-mono truncate cursor-grab active:cursor-grabbing border ${
-                          isSelected
-                            ? 'bg-emerald-500/50 text-emerald-200 border-emerald-300 ring-2 ring-emerald-300 shadow-[0_0_12px_rgba(52,211,153,0.6)] z-20'
-                            : 'bg-emerald-950/60 text-emerald-300 border-emerald-500/30 hover:bg-emerald-900/60 z-10'
-                        }`}
-                        style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
-                      >
-                        <span className="truncate">Áudio #{idx + 1} ({sc.sfxType || 'impact'})</span>
-                        <span className="text-emerald-400">♫</span>
-                        {/* Alça de Trimming */}
-                        <div
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            setIsResizingClip({
-                              sceneId: sc.id,
-                              trackType: 'audio',
-                              edge: 'end',
-                              startX: e.clientX,
-                              initialDur: dur,
-                              initialStartSec: startSec,
-                            });
-                          }}
-                          className="absolute right-0 top-0 bottom-0 w-2.5 hover:bg-emerald-400 cursor-ew-resize bg-emerald-500/30 flex items-center justify-center"
+                          className="absolute right-0 top-0 bottom-0 w-3 hover:bg-white/40 cursor-ew-resize bg-white/10 flex items-center justify-center z-20"
                         />
                       </div>
                     );
                   })}
                 </div>
               </div>
-            </div>
+            ))}
           </div>
         </div>
       </div>

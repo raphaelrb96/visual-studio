@@ -15,6 +15,7 @@ import {
   Sparkles,
   Cloud,
   LogOut,
+  Layers,
 } from 'lucide-react';
 import { useAuth } from '@/app/lib/AuthContext';
 import { getUserCredits, UserCredits } from '@/app/lib/firestore';
@@ -22,6 +23,7 @@ import { getUserCredits, UserCredits } from '@/app/lib/firestore';
 const NAV_ITEMS = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'Meus Vídeos', href: '/videos', icon: Video },
+  { label: 'Templates de Vídeo', href: '/templates', icon: Layers },
   { label: 'Presets & Estilos', href: '/presets', icon: Palette },
   { label: 'Configurações', href: '/settings', icon: Settings },
 ];
@@ -42,8 +44,8 @@ export default function DashboardLayout({
     }
   }, [user]);
 
-  // Se a rota atual for /create (estúdio e criação de vídeo), renderiza em tela cheia (100% fullscreen sem sidebar)
-  if (pathname?.startsWith('/create')) {
+  // Se a rota for /create ou a página detalhada de template, renderiza em tela cheia (100% fullscreen sem sidebar)
+  if (pathname?.startsWith('/create') || pathname?.startsWith('/templates/')) {
     return <main className="min-h-screen w-full bg-[#070a12] text-slate-100">{children}</main>;
   }
 

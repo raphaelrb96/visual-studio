@@ -34,6 +34,7 @@ import { useStudioStore } from '@/lib/store/useStudioStore';
 import { HyperFramesLivePlayer } from '@/components/hyperframe/HyperFramesLivePlayer';
 import { buildMasterVideoHtml } from '@/lib/motion-compiler';
 import { CapCutTimeline } from '@/components/motion/CapCutTimeline';
+import { MotionTemplateSquarePreview } from '@/components/motion/MotionTemplateSquarePreview';
 import { DEFAULT_STYLE_PRESETS, getPresetById } from '@/lib/presets';
 import { MOTION_TEMPLATES } from '@/lib/motion-templates';
 import { renderManifestToVideoBlob } from '@/lib/video-exporter';
@@ -93,6 +94,7 @@ function CreatePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const projectIdParam = searchParams.get('id');
+  const initialTemplateParam = searchParams.get('initialTemplate');
   const { user } = useAuth();
 
   // Store Zustand do Estúdio
@@ -128,8 +130,16 @@ function CreatePageContent() {
   const [promptInput, setPromptInput] = useState('');
   const [aspectRatioSelection, setAspectRatioSelection] = useState<AspectRatio>('9:16');
   const [presetSelection, setPresetSelection] = useState('kinetic_yellow');
-  const [templateSelection, setTemplateSelection] = useState('hormozi_bold');
+  const [templateSelection, setTemplateSelection] = useState(
+    initialTemplateParam || 'assemble-then-type-flyin'
+  );
   const [voiceSelection, setVoiceSelection] = useState('antonio');
+
+  useEffect(() => {
+    if (initialTemplateParam) {
+      setTemplateSelection(initialTemplateParam);
+    }
+  }, [initialTemplateParam]);
 
   // Roteiro estruturado gerado pela IA para revisão na Etapa 4
   const [generatedScriptData, setGeneratedScriptData] = useState<{
@@ -378,15 +388,21 @@ function CreatePageContent() {
     }
   };
 
-  // ETAPA 4 -> ESTÚDIO: ABRIR NO EDITOR E COMPILAR VÍDEO NO HYPERFRAMES
+  // ETAPA 4 -> ESTÚDIO: ABRIR NO EDITOR COM COMPOSIÇÕES DO TEMPLATE JÁ PRONTAS
   const handleOpenStudio = async () => {
     const scenesToCompile = generatedScriptData.scenes || [];
     const total = scenesToCompile.length;
     if (total === 0) return;
 
     setIsGenerating(true);
-    setGenerationProgress(25);
-    setGenerationStage('Sincronizando palcos animados e preparando timeline...');
+    setGenerationProgress(30);
+    setGenerationStage('Montando timeline multipista e palcos animados do template...');
+    setSceneProgressList([
+      { idx: 0, label: 'Sincronizando Narrativa & Áudio Contínuo na Timeline', status: 'done' },
+      { idx: 1, label: 'Carregando Anatomia 3D do Template Selecionado', status: 'active' },
+      { idx: 2, label: 'Integrando Mídias B-Roll em Molduras Dinâmicas', status: 'pending' },
+      { idx: 3, label: 'Abrindo Estúdio NLE Multipista', status: 'pending' },
+    ]);
 
     try {
       const activePreset = availablePresets.find((p) => p.id === presetSelection) || availablePresets[0] || DEFAULT_STYLE_PRESETS[0];
@@ -394,9 +410,12 @@ function CreatePageContent() {
       const textColor = activePreset.theme.primaryTextColor || '#ffffff';
       const bgColor = activePreset.theme.backgroundColor || '#050505';
 
-      // Compila com a IA cada cena a partir do seu visualPrompt
+      // Verifica se todas as cenas já vieram compiladas com o motor do template; compila apenas se faltar
       const compiledScenes: ScriptScene[] = await Promise.all(
         scenesToCompile.map(async (scene, idx) => {
+          if (scene.compiledCustomHtml && scene.compiledGsapScript) {
+            return scene;
+          }
           try {
             const compRes = await fetch('/api/studio/compile-scene', {
               method: 'POST',
@@ -424,10 +443,10 @@ function CreatePageContent() {
         })
       );
 
-      setGenerationProgress(85);
-      setGenerationStage('Salvando projeto e montando estúdio no HyperFrames...');
+      setSceneProgressList((list) => list.map((it) => ({ ...it, status: 'done' })));
+      setGenerationProgress(90);
+      setGenerationStage('Salvando projeto e abrindo estúdio...');
 
-      // Atualiza o store com as cenas contendo o HTML5/SVG + GSAP 3 real gerado
       setScenes(compiledScenes);
       setGeneratedScriptData((prev) => ({ ...prev, scenes: compiledScenes }));
 
@@ -471,7 +490,7 @@ function CreatePageContent() {
   };
 
   // Recompila uma cena específica diretamente de dentro do Estúdio quando o usuário edita o prompt ou template
-  const handleRecompileSingleScene = async (targetScene: ScriptScene) => {
+  const handleRecompileSingleScene = async (targetScene: ScriptScene, forceAiCustom = false) => {
     if (!targetScene || isRecompilingScene) return;
     setIsRecompilingScene(true);
     try {
@@ -491,6 +510,7 @@ function CreatePageContent() {
           primaryTextColor: activePreset.theme.primaryTextColor || '#ffffff',
           backgroundColor: activePreset.theme.backgroundColor || '#050505',
           templateId: targetScene.templateId || targetScene.componentType || templateSelection,
+          forceAiCustom,
         }),
       });
       if (res.ok) {
@@ -530,7 +550,7 @@ function CreatePageContent() {
     }
   };
 
-  // Exportar Vídeo MP4
+  // Exportar Vídeo MP4 H.264/AAC via FFmpeg
   const handleExportVideo = async () => {
     if (manifest.scenes.length === 0) return;
     setIsExporting(true);
@@ -538,14 +558,18 @@ function CreatePageContent() {
     setExportStage('Carregando áudios neurais e animações...');
 
     try {
-      const result = await renderManifestToVideoBlob(manifest, (percent, stage) => {
-        setExportProgress(percent);
-        setExportStage(stage);
-      });
+      const result = await renderManifestToVideoBlob(
+        manifest,
+        (percent, stage) => {
+          setExportProgress(percent);
+          setExportStage(stage);
+        },
+        voiceSelection
+      );
 
       const a = document.createElement('a');
       a.href = result.url;
-      a.download = `${projectTitle.toLowerCase().replace(/[^a-z0-9]/g, '_')}.mp4`;
+      a.download = `${projectTitle.toLowerCase().replace(/[^a-z0-9]/g, '_') || 'video_final'}.mp4`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -757,13 +781,7 @@ function CreatePageContent() {
                         ) : (
                           <span className="w-4 h-4 rounded-full border border-gray-600 inline-block shrink-0" />
                         )}
-                        <span className="truncate">
-                          {item.status === 'active'
-                            ? `Gerando cena ${item.idx + 1}...`
-                            : item.status === 'done'
-                            ? `Cena ${item.idx + 1} compilada com sucesso`
-                            : `Cena ${item.idx + 1} aguardando`}
-                        </span>
+                        <span className="truncate">{item.label}</span>
                       </div>
                       <span className="text-[10px] font-mono uppercase shrink-0">
                         {item.status === 'done' ? 'Pronto' : item.status === 'active' ? 'Ativo' : 'Fila'}
@@ -1062,42 +1080,39 @@ function CreatePageContent() {
                 </p>
               </div>
 
-              {/* Grid de Templates com Prévia Visual */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[440px] overflow-y-auto p-1">
+              {/* Grid de Templates com Prévia Horizontal (16:9) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-h-[520px] overflow-y-auto p-1">
                 {MOTION_TEMPLATES.map((tpl) => {
                   const isSelected = templateSelection === tpl.id;
                   return (
                     <div
                       key={tpl.id}
                       onClick={() => setTemplateSelection(tpl.id)}
-                      className={`p-4 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between h-48 relative group ${
+                      className={`rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between overflow-hidden p-3 relative group ${
                         isSelected
                           ? 'bg-indigo-600/20 border-indigo-500 text-white ring-2 ring-indigo-500/50 shadow-xl shadow-indigo-600/25'
                           : 'bg-[#0f121d] border-white/10 text-gray-300 hover:border-white/20 hover:bg-white/5'
                       }`}
                     >
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-2xl">{tpl.previewIcon}</span>
-                          <span
-                            className="text-[9px] font-bold px-2 py-0.5 rounded-full border border-white/10 uppercase tracking-wider"
-                            style={{ color: tpl.defaultHighlightColor }}
-                          >
-                            {tpl.category}
+                      {/* Item em Formato Horizontal Exato (16:9) */}
+                      <div className="w-full aspect-video rounded-xl overflow-hidden relative shadow-inner mb-3 border border-white/5">
+                        <MotionTemplateSquarePreview templateId={tpl.id} name={tpl.name} previewGif={tpl.previewGif} />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-amber-400">
+                            {tpl.badge}
+                          </span>
+                          <span className="text-[10px] font-mono text-gray-400">
+                            {tpl.duration}
                           </span>
                         </div>
-                        <div className="font-bold text-sm text-white mb-1">{tpl.name}</div>
+
+                        <div className="font-bold text-sm text-white">{tpl.name}</div>
                         <div className="text-[11px] text-gray-400 leading-snug line-clamp-2">
                           {tpl.description}
                         </div>
-                      </div>
-
-                      {/* Footer do Card com Badge e Duração */}
-                      <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[10px] text-gray-400">
-                        <span className="font-mono font-semibold" style={{ color: tpl.defaultHighlightColor }}>
-                          {tpl.badge}
-                        </span>
-                        <span className="font-mono">~{tpl.recommendedDuration}s/bloco</span>
                       </div>
                     </div>
                   );
@@ -1126,19 +1141,19 @@ function CreatePageContent() {
             </div>
           ) : (
             /* ========================================================================= */
-            /* ETAPA 4: REVISÃO DE ROTEIRO & CENAS (NARRAÇÃO INDIVIDUAL + PROMPTS CENA) */
+            /* ETAPA 4: REVISÃO DE ROTEIRO & COMPOSIÇÃO UNIFICADA DA LINHA DO TEMPO      */
             /* ========================================================================= */
             <div className="space-y-8 animate-in fade-in slide-in-from-right-2">
               <div className="text-center space-y-3">
                 <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold">
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  Etapa 4 de 4 • Roteiro Concebido &amp; Prompts Visuais
+                  Etapa 4 de 4 • Narrativa Orgânica &amp; Elementos da Timeline
                 </div>
                 <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
-                  Roteiro &amp; Cenas Visuais
+                  Roteiro Contínuo &amp; Distribuição na Linha do Tempo
                 </h1>
                 <p className="text-gray-400 text-sm sm:text-base max-w-xl mx-auto">
-                  A IA gerou a narração completa e individual para todo o vídeo e concebeu o resumo e o prompt visual de cada cena para o Canva.
+                  A IA sintetizou uma narrativa contínua sem quebras de cena artificiais. Os elementos gráficos, mídias e legendas entram e saem organicamente na timeline livre.
                 </p>
               </div>
 
@@ -1215,10 +1230,10 @@ function CreatePageContent() {
                 <div className="flex items-center justify-between">
                   <h3 className="text-base font-bold text-white flex items-center gap-2">
                     <Layers className="w-4 h-4 text-indigo-400" />
-                    Cenas &amp; Layout Visual no Canva ({generatedScriptData.scenes.length} Cenas)
+                    Momentos Visuais da Timeline ({generatedScriptData.scenes.length} Elementos Motion)
                   </h3>
-                  <span className="text-xs text-gray-400">
-                    Sincronizadas sobre a narração
+                  <span className="text-xs text-indigo-400 font-mono bg-indigo-950/60 border border-indigo-800/40 px-2.5 py-1 rounded-lg">
+                    Entradas e saídas orgânicas assíncronas
                   </span>
                 </div>
 
@@ -1228,16 +1243,19 @@ function CreatePageContent() {
                       MOTION_TEMPLATES.find((t) => t.id === (scene.templateId || scene.componentType)) ||
                       MOTION_TEMPLATES[0];
 
+                    const motionStart = typeof scene.motionStartSec === 'number' ? scene.motionStartSec : idx * 4.5;
+                    const motionDur = typeof scene.motionDurationSec === 'number' ? scene.motionDurationSec : scene.durationSec;
+
                     return (
                       <div
                         key={scene.id || idx}
                         className="bg-[#0f121d] border border-white/10 rounded-2xl p-5 hover:border-indigo-500/40 transition-all space-y-3"
                       >
-                        {/* Header da Cena com Nome Real do Template HyperFrames */}
+                        {/* Header da Camada com Timing Livre */}
                         <div className="flex items-center justify-between border-b border-white/5 pb-2.5">
                           <div className="flex items-center gap-2.5">
                             <span className="px-2.5 py-1 rounded-lg bg-indigo-600/30 text-indigo-300 font-mono text-xs font-bold border border-indigo-500/30">
-                              CENA {String(idx + 1).padStart(2, '0')}
+                              MOMENTO {String(idx + 1).padStart(2, '0')}
                             </span>
                             <div className="flex items-center gap-1.5">
                               <span className="text-base">{sceneTpl.previewIcon}</span>
@@ -1251,16 +1269,16 @@ function CreatePageContent() {
                             </div>
                           </div>
                           <span className="text-xs font-mono text-cyan-400 bg-cyan-950/60 border border-cyan-800/40 px-2.5 py-0.5 rounded-md">
-                            ~{scene.durationSec.toFixed(1)}s
+                            Motion: {motionStart.toFixed(1)}s ➜ {(motionStart + motionDur).toFixed(1)}s ({motionDur.toFixed(1)}s)
                           </span>
                         </div>
 
-                        {/* Grid Limpo e Editável: Resumo da Cena & Prompt Visual da Cena */}
+                        {/* Grid Limpo e Editável: Resumo do Momento & Prompt Visual */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {/* Coluna 1: Resumo da Cena */}
+                          {/* Coluna 1: Resumo do Momento */}
                           <div className="bg-[#07090e] border border-white/5 rounded-xl p-3.5 space-y-1.5">
                             <span className="text-[11px] font-bold text-indigo-400 uppercase tracking-wider block">
-                              Resumo da Cena
+                              Resumo Narrativo
                             </span>
                             <textarea
                               rows={3}
@@ -1277,10 +1295,10 @@ function CreatePageContent() {
                             />
                           </div>
 
-                          {/* Coluna 2: Prompt Visual da Cena */}
+                          {/* Coluna 2: Prompt Visual de Animação */}
                           <div className="bg-[#07090e] border border-white/5 rounded-xl p-3.5 space-y-1.5">
                             <span className="text-[11px] font-bold text-yellow-400 uppercase tracking-wider block">
-                              Prompt Visual da Cena (Direção de Animação IA)
+                              Prompt Visual (Direção de Motion Graphics GSAP)
                             </span>
                             <textarea
                               rows={3}
@@ -1302,9 +1320,9 @@ function CreatePageContent() {
                           </div>
                         </div>
 
-                        {/* Trecho Falado nesta Cena */}
+                        {/* Trecho Falado neste Momento */}
                         <div className="text-[11px] text-gray-400 pt-1 flex items-center gap-2">
-                          <span className="text-emerald-400 font-semibold shrink-0">Trecho da fala:</span>
+                          <span className="text-emerald-400 font-semibold shrink-0">Trecho falado:</span>
                           <span className="italic truncate">&quot;{scene.text}&quot;</span>
                         </div>
                       </div>
@@ -1320,7 +1338,7 @@ function CreatePageContent() {
                   onClick={() => setCreationStep(3)}
                   className="px-6 py-4 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 font-bold text-sm transition-colors border border-white/10"
                 >
-                  ← Mudar Template
+                  ← Mudar Estilo
                 </button>
                 <button
                   type="button"
@@ -1328,7 +1346,7 @@ function CreatePageContent() {
                   className="flex-1 py-4 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-500 to-indigo-600 hover:opacity-95 text-white font-bold text-lg shadow-xl shadow-emerald-500/25 transition-all flex items-center justify-center gap-2"
                 >
                   <Sparkles className="w-5 h-5" />
-                  Abrir no Editor &amp; Compilar Vídeo no HyperFrames
+                  Compilar Vídeo Unificado &amp; Abrir Estúdio
                 </button>
               </div>
             </div>
@@ -1513,7 +1531,7 @@ function CreatePageContent() {
                     >
                       {MOTION_TEMPLATES.map((tpl) => (
                         <option key={tpl.id} value={tpl.id} className="bg-[#0f121d]">
-                          {tpl.previewIcon} {tpl.name} ({tpl.category})
+                          {tpl.previewIcon} {tpl.name} • {tpl.categoryName}
                         </option>
                       ))}
                     </select>
@@ -1539,7 +1557,7 @@ function CreatePageContent() {
                       <button
                         type="button"
                         disabled={isRecompilingScene}
-                        onClick={() => handleRecompileSingleScene(selectedScene)}
+                        onClick={() => handleRecompileSingleScene(selectedScene, true)}
                         className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:opacity-95 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-lg shadow-cyan-500/20 disabled:opacity-50 transition-all"
                       >
                         {isRecompilingScene ? (
