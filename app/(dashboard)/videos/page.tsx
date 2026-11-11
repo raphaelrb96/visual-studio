@@ -15,6 +15,8 @@ import {
   Square,
   AlertTriangle,
   X,
+  Clock,
+  Calendar,
 } from 'lucide-react';
 import { useAuth } from '@/app/lib/AuthContext';
 import { getUserVideos, deleteDocument, VideoRecord } from '@/app/lib/firestore';
@@ -102,11 +104,30 @@ export default function VideosPage() {
     }
   };
 
-  const filtered = videos.filter((v) => {
-    if (filter !== 'all' && v.status !== filter) return false;
-    if (search && !v.title.toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  });
+  const filtered = videos
+    .filter((v) => {
+      if (filter !== 'all' && v.status !== filter) return false;
+      if (search && !v.title.toLowerCase().includes(search.toLowerCase())) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const timeA = new Date(a.updatedAt || a.createdAt || 0).getTime();
+      const timeB = new Date(b.updatedAt || b.createdAt || 0).getTime();
+      return timeB - timeA;
+    });
+
+  const formatDateTime = (isoString?: string) => {
+    if (!isoString) return null;
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return null;
+    return d.toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
 
   const isAllSelected = filtered.length > 0 && selectedIds.length === filtered.length;
 
@@ -324,15 +345,22 @@ export default function VideosPage() {
                   </p>
                 </div>
 
-                <div className="p-4 bg-slate-950/60 border-t border-slate-800/80 flex items-center justify-between text-xs">
-                  <span className="text-[11px] text-slate-500">
-                    {video.updatedAt
-                      ? new Date(video.updatedAt).toLocaleDateString('pt-BR')
-                      : video.createdAt
-                      ? new Date(video.createdAt).toLocaleDateString('pt-BR')
-                      : 'Hoje'}
-                  </span>
-                  <div className="flex items-center gap-2">
+                <div className="p-4 bg-slate-950/60 border-t border-slate-800/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 text-xs">
+                  <div className="flex flex-col gap-0.5 text-[11px] text-slate-400">
+                    <span className="flex items-center gap-1.5 text-slate-300 font-medium">
+                      <Clock className="w-3 h-3 text-indigo-400 shrink-0" />
+                      <span>
+                        Atualizado: {formatDateTime(video.updatedAt) || formatDateTime(video.createdAt) || 'Hoje'}
+                      </span>
+                    </span>
+                    {video.createdAt && (
+                      <span className="flex items-center gap-1.5 text-[10px] text-slate-500">
+                        <Calendar className="w-3 h-3 text-slate-500 shrink-0" />
+                        <span>Criado em: {formatDateTime(video.createdAt)}</span>
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 self-end sm:self-auto">
                     <span className="flex items-center gap-1 text-[11px] text-indigo-400 font-semibold group-hover:underline mr-1">
                       <Edit3 className="w-3.5 h-3.5" />
                       <span>Abrir</span>

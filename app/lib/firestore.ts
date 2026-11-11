@@ -103,16 +103,17 @@ export async function getUserProjects(userId: string): Promise<VideoProject[]> {
   try {
     const records = await getCollection<VideoProject>(
       'projects',
-      where('userId', '==', userId),
-      orderBy('updatedAt', 'desc')
+      where('userId', '==', userId)
     );
-    return records;
-  } catch {
-    try {
-      return await getCollection<VideoProject>('projects', where('userId', '==', userId));
-    } catch {
-      return [];
-    }
+    // Ordena garantindo os mais recentes atualizados no topo (prioriza updatedAt, com fallback para createdAt)
+    return records.sort((a, b) => {
+      const timeA = new Date(a.updatedAt || a.createdAt || 0).getTime();
+      const timeB = new Date(b.updatedAt || b.createdAt || 0).getTime();
+      return timeB - timeA;
+    });
+  } catch (err) {
+    console.error('Erro ao buscar projetos do usuário:', err);
+    return [];
   }
 }
 
